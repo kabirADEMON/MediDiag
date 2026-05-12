@@ -8,6 +8,7 @@ Plateforme d'aide au diagnostic médical basée sur l'intelligence artificielle 
 
 | Guide | Description | Temps |
 |-------|-------------|-------|
+| **[🚀 Guide d'Installation Rapide](INSTALL_GUIDE.md)** | Installation visuelle étape par étape | 10 min |
 | **[⚡ Démarrage Rapide](QUICKSTART.md)** | Installation express | 5 min |
 | **[📦 Installation Complète](INSTALLATION.md)** | Guide détaillé d'installation | 15 min |
 | **[🐳 Déploiement Docker](DOCKER.md)** | Déploiement avec Docker Compose | 10 min |
@@ -335,5 +336,6 @@ Pour toute question:
 ---
 
 **Développé avec ❤️ pour améliorer le diagnostic médical**
-#   m a l a d i e  
+#   m a l a d i e 
+ 
  
