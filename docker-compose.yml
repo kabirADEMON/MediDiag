@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Backend FastAPI
+  backend:
+    build:
+      context: ./backend-fastapi
+      dockerfile: Dockerfile
+    container_name: medical-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://medical_user:medical_password@postgres:5432/medical_diagnostic
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+    volumes:
+      - ./backend-fastapi:/app
+      - ml-models:/app/app/ml/models
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - medical-network
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend-react
+      dockerfile: Dockerfile
+    container_name: medical-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - medical-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: medical-postgres
+    environment:
+      - POSTGRES_USER=medical_user
+      - POSTGRES_PASSWORD=medical_password
+      - POSTGRES_DB=medical_diagnostic
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    restart: unless-stopped
+    networks:
+      - medical-network
+
+volumes:
+  postgres-data:
+  ml-models:
+
+networks:
+  medical-network:
+    driver: bridge

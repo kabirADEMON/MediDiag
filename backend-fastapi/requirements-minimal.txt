@@ -1,0 +1,15 @@
+# FastAPI Core (minimal pour tester sans DB)
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Data Processing & ML
+pandas==2.1.4
+numpy==1.26.3
+scikit-learn==1.4.0
+rapidfuzz==3.6.1
+
+# API & Utilities
+python-dotenv==1.0.0
+httpx==0.26.0

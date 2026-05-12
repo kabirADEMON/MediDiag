@@ -1,0 +1,10 @@
+{
+  "age": 28,
+  "sexe": "F",
+  "symptomes": [
+    "fièvre",
+    "fatigue",
+    "maux de tête",
+    "courbatures"
+  ]
+}

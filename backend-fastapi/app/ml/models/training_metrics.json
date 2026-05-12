@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.17,
+  "top3_accuracy": 0.5703333333333334,
+  "top5_accuracy": 0.907,
+  "cv_mean": 0.17733333333333332,
+  "cv_std": 0.007775495696952917,
+  "oob_score": 0.14925,
+  "n_diseases": 601,
+  "n_training_samples": 15000,
+  "n_text_features": 300,
+  "n_total_features": 302,
+  "includes_age": true,
+  "includes_sex": true,
+  "includes_analyses": true,
+  "includes_results": true
+}
