@@ -166,15 +166,15 @@ async def get_consultations(
                 SELECT c.*, p.nom, p.prenom, p.code_patient,
                        u.nom as medecin_nom, u.prenom as medecin_prenom
                 FROM consultations c
-                JOIN patients p ON c.patient_id = p.id
-                JOIN users u ON c.medecin_id = u.id
+                LEFT JOIN patients p ON c.patient_id = p.id
+                LEFT JOIN users u ON c.medecin_id = u.id
                 WHERE c.patient_id = ?
                 ORDER BY c.date_consultation DESC
                 LIMIT ? OFFSET ?
             """
             cursor.execute(query, (patient_id, limit, skip))
             consultations = [dict(row) for row in cursor.fetchall()]
-            
+
             # Count total
             cursor.execute("SELECT COUNT(*) FROM consultations WHERE patient_id = ?", (patient_id,))
             total = cursor.fetchone()[0]
@@ -184,14 +184,14 @@ async def get_consultations(
                 SELECT c.*, p.nom, p.prenom, p.code_patient,
                        u.nom as medecin_nom, u.prenom as medecin_prenom
                 FROM consultations c
-                JOIN patients p ON c.patient_id = p.id
-                JOIN users u ON c.medecin_id = u.id
+                LEFT JOIN patients p ON c.patient_id = p.id
+                LEFT JOIN users u ON c.medecin_id = u.id
                 ORDER BY c.date_consultation DESC
                 LIMIT ? OFFSET ?
             """
             cursor.execute(query, (limit, skip))
             consultations = [dict(row) for row in cursor.fetchall()]
-            
+
             # Count total
             cursor.execute("SELECT COUNT(*) FROM consultations")
             total = cursor.fetchone()[0]
@@ -236,8 +236,8 @@ async def get_consultation_by_id(consultation_id: int):
             SELECT c.*, p.nom, p.prenom, p.code_patient, p.date_naissance, p.sexe,
                    u.nom as medecin_nom, u.prenom as medecin_prenom
             FROM consultations c
-            JOIN patients p ON c.patient_id = p.id
-            JOIN users u ON c.medecin_id = u.id
+            LEFT JOIN patients p ON c.patient_id = p.id
+            LEFT JOIN users u ON c.medecin_id = u.id
             WHERE c.id = ?
         """, (consultation_id,))
         

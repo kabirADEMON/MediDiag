@@ -54,7 +54,9 @@ export function AuthProvider({ children }) {
       const response = await authApi.login(credentials)
 
       if (response.success) {
-        const { access_token, refresh_token, user: userData } = response.data
+        // axios wrapper: response.data = backend response {success, message, data: {tokens, user}}
+        const payload = response.data?.data || response.data
+        const { access_token, refresh_token, user: userData } = payload
 
         // Store tokens and user data
         localStorage.setItem(AUTH_CONFIG.TOKEN_KEY, access_token)

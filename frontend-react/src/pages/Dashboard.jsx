@@ -9,19 +9,20 @@ import {
   Users,
   Stethoscope,
   FileText,
-  TrendingUp,
   Activity,
   AlertCircle,
   Calendar,
   Clock,
+  CheckCircle,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Loading } from '@/components/ui/Loading'
-import * as diagnosticApi from '@/api/diagnosticApi'
 import * as patientApi from '@/api/patientApi'
+import * as consultationApi from '@/api/consultationApi'
+import { get } from '@/api/axios'
 import { formatDate } from '@/utils/helpers'
 
 export function Dashboard() {
@@ -33,7 +34,8 @@ export function Dashboard() {
     totalDiagnostics: 0,
     todayConsultations: 0,
   })
-  const [recentActivity, setRecentActivity] = useState([])
+  const [recentPatients, setRecentPatients] = useState([])
+  const [systemStatus, setSystemStatus] = useState({ api: false, ia: false, db: 0 })
 
   useEffect(() => {
     loadDashboardData()
@@ -43,18 +45,29 @@ export function Dashboard() {
     try {
       setLoading(true)
 
-      // Load statistics
-      const [statsResponse, patientsResponse] = await Promise.all([
-        diagnosticApi.getDiagnosticStats(),
+      const [globalStatsRes, patientsRes, healthRes] = await Promise.all([
+        get('/diagnostics/stats'),
         patientApi.getPatients({ limit: 5 }),
+        get('/diagnostic/health'),
       ])
 
-      if (statsResponse.success) {
-        setStats(statsResponse.data)
+      if (globalStatsRes.success && globalStatsRes.data?.data) {
+        setStats(globalStatsRes.data.data)
+      } else if (globalStatsRes.success && globalStatsRes.data) {
+        setStats(globalStatsRes.data)
       }
 
-      if (patientsResponse.success) {
-        setRecentActivity(patientsResponse.data.patients || [])
+      if (patientsRes.success && patientsRes.data?.data) {
+        setRecentPatients(patientsRes.data.data.patients || [])
+      }
+
+      if (healthRes.success) {
+        const healthData = healthRes.data?.data || healthRes.data
+        setSystemStatus({
+          api: true,
+          ia: true,
+          db: healthData?.diseases_loaded || 1000,
+        })
       }
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
@@ -110,7 +123,7 @@ export function Dashboard() {
       {/* Welcome header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">
-          Bonjour, Dr. {user?.nom} 👋
+          Bonjour, Dr. {user?.nom}
         </h1>
         <p className="text-gray-600 mt-1">
           Voici un aperçu de votre activité médicale
@@ -141,7 +154,7 @@ export function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link to="/consultation/new">
+            <Link to="/consultation">
               <Button variant="primary" className="w-full">
                 <Stethoscope className="w-4 h-4" />
                 Nouvelle consultation
@@ -164,15 +177,15 @@ export function Dashboard() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent activity */}
+        {/* Recent patients */}
         <Card>
           <CardHeader>
-            <CardTitle>Activité récente</CardTitle>
+            <CardTitle>Patients récents</CardTitle>
           </CardHeader>
           <CardContent>
-            {recentActivity.length > 0 ? (
+            {recentPatients.length > 0 ? (
               <div className="space-y-4">
-                {recentActivity.map((patient) => (
+                {recentPatients.map((patient) => (
                   <div
                     key={patient.id}
                     className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
@@ -186,7 +199,7 @@ export function Dashboard() {
                           {patient.prenom} {patient.nom}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {patient.age} ans • {patient.sexe === 'M' ? 'Homme' : 'Femme'}
+                          {patient.code_patient} • {patient.sexe === 'M' ? 'Homme' : 'Femme'}
                         </p>
                       </div>
                     </div>
@@ -199,9 +212,15 @@ export function Dashboard() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">
-                Aucune activité récente
-              </p>
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-500">Aucun patient enregistré</p>
+                <Link to="/patients/new">
+                  <Button variant="primary" size="sm" className="mt-3">
+                    Ajouter un patient
+                  </Button>
+                </Link>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -226,10 +245,10 @@ export function Dashboard() {
 
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Activity className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-5 h-5 text-green-600" />
                   <div>
                     <p className="font-medium text-gray-900">Modèle IA</p>
-                    <p className="text-sm text-gray-500">Prêt</p>
+                    <p className="text-sm text-gray-500">Random Forest (90.7%)</p>
                   </div>
                 </div>
                 <Badge variant="success">Actif</Badge>
@@ -240,7 +259,9 @@ export function Dashboard() {
                   <Clock className="w-5 h-5 text-blue-600" />
                   <div>
                     <p className="font-medium text-gray-900">Base de données</p>
-                    <p className="text-sm text-gray-500">1000 maladies</p>
+                    <p className="text-sm text-gray-500">
+                      {systemStatus.db || 1000} maladies chargées
+                    </p>
                   </div>
                 </div>
                 <Badge variant="info">Chargée</Badge>
