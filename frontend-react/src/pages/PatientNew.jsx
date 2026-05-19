@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, Save, User } from 'lucide-react'
+import { ArrowLeft, Save, User, CheckCircle } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -54,11 +54,17 @@ export function PatientNew() {
       const response = await patientApi.createPatient(data)
 
       if (response.success) {
+        // Backend wraps in {success, message, data: patient}
+        // axios wrapper wraps in {success, data: <backend_response>}
+        // So: response.data.data = patient object
+        const patient = response.data?.data || response.data
+        const code = patient?.code_patient || ''
         setSuccess(true)
-        setPatientCode(response.data.code_patient)
+        setPatientCode(code)
+        reset()
         setTimeout(() => {
           navigate('/patients')
-        }, 2500)
+        }, 3000)
       } else {
         setError(response.error || 'Échec de la création du patient')
       }
@@ -92,12 +98,22 @@ export function PatientNew() {
 
       {success && (
         <Alert variant="success">
-          <div>
-            <p className="font-medium">Patient créé avec succès !</p>
-            <p className="mt-1">
-              Code patient : <span className="font-mono font-bold text-green-900">{patientCode}</span>
-            </p>
-            <p className="text-sm mt-1">Redirection...</p>
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Patient créé avec succès !</p>
+              {patientCode && (
+                <p className="mt-1">
+                  Code patient :{' '}
+                  <span className="font-mono font-bold text-green-900 bg-green-100 px-2 py-0.5 rounded">
+                    {patientCode}
+                  </span>
+                </p>
+              )}
+              <p className="text-sm mt-1 text-green-700">
+                Redirection vers la liste dans quelques secondes...
+              </p>
+            </div>
           </div>
         </Alert>
       )}
@@ -264,7 +280,7 @@ export function PatientNew() {
             type="submit"
             variant="primary"
             loading={loading}
-            disabled={loading}
+            disabled={loading || success}
           >
             <Save className="w-4 h-4" />
             Enregistrer le patient
