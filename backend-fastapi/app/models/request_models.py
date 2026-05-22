@@ -2,7 +2,7 @@
 Request models (Pydantic) for API endpoints
 """
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import date
 
 
@@ -11,7 +11,8 @@ class DiagnosticRequest(BaseModel):
     age: int = Field(..., ge=0, le=120, description="Patient age in years")
     sexe: str = Field(..., description="Patient sex: M (Male), F (Female)")
     symptomes: List[str] = Field(..., min_items=1, description="List of symptoms")
-    analyses: Optional[Dict[str, float]] = Field(default=None, description="Lab results (optional)")
+    analyses: Optional[Dict[str, Any]] = Field(default=None, description="Lab results (optional)")
+    analyses_anomalies: Optional[List[str]] = Field(default=None, description="Names of analyses flagged as abnormal")
     
     @validator('sexe')
     def validate_sexe(cls, v):

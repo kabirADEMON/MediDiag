@@ -44,55 +44,60 @@ def calculate_symptom_match_score(
     weights: List[float] = None
 ) -> float:
     """
-    Calculate overall symptom match score between patient and disease
-    
-    Args:
-        patient_symptoms: List of patient symptoms
-        disease_symptoms: List of disease symptoms
-        weights: Optional weights for disease symptoms (symptom_1 > symptom_2 > ...)
-        
-    Returns:
-        Match score (0-100)
+    Calculate overall symptom match score between patient and disease.
+
+    Uses a coverage-adjusted scoring model: the base weighted score is multiplied
+    by a coverage factor that penalises diseases where only a small fraction of
+    their defining symptoms are present in the patient.
+
+    Coverage factor = (n_matched / n_disease_symptoms) ** 0.4
+      - 1 / 9 matched → ×0.36   (very sparse match, heavily penalised)
+      - 3 / 9 matched → ×0.62   (moderate match)
+      - 6 / 9 matched → ×0.84   (good match)
+      - 9 / 9 matched → ×1.00   (perfect coverage)
     """
     if not patient_symptoms or not disease_symptoms:
         return 0.0
-    
-    # Default weights: decreasing importance
+
+    # Default weights: decreasing importance for each disease symptom position
     if weights is None:
         weights = [1.0 / (i + 1) for i in range(len(disease_symptoms))]
-    
+
     total_score = 0.0
     total_weight = sum(weights[:len(disease_symptoms)])
-    
-    matched_disease_symptoms = set()
-    
+    matched_disease_symptoms: set = set()
+
+    MATCH_THRESHOLD = 65  # raised from 60 to reduce false positives
+
     for patient_symptom in patient_symptoms:
         best_match_score = 0.0
         best_match_idx = -1
-        
+
         for idx, disease_symptom in enumerate(disease_symptoms):
             if idx in matched_disease_symptoms:
                 continue
-            
-            # Calculate fuzzy match score
             score = fuzz.token_sort_ratio(patient_symptom, disease_symptom)
-            
             if score > best_match_score:
                 best_match_score = score
                 best_match_idx = idx
-        
-        # If good match found, add weighted score
-        if best_match_score >= 60 and best_match_idx >= 0:
+
+        if best_match_score >= MATCH_THRESHOLD and best_match_idx >= 0:
             weight = weights[best_match_idx] if best_match_idx < len(weights) else weights[-1]
             total_score += (best_match_score / 100.0) * weight
             matched_disease_symptoms.add(best_match_idx)
-    
-    # Normalize score to 0-100
-    if total_weight > 0:
-        normalized_score = (total_score / total_weight) * 100
-        return min(100.0, normalized_score)
-    
-    return 0.0
+
+    if total_weight == 0 or not matched_disease_symptoms:
+        return 0.0
+
+    # Base score: weighted quality of matches normalised to 0-100
+    base = (total_score / total_weight) * 100
+
+    # Coverage penalty: penalise diseases matched on too few of their symptoms
+    n_matched = len(matched_disease_symptoms)
+    n_disease = len(disease_symptoms)
+    coverage_factor = (n_matched / n_disease) ** 0.4
+
+    return min(100.0, base * coverage_factor)
 
 
 def calculate_partial_ratio_score(text1: str, text2: str) -> float:
@@ -126,7 +131,7 @@ def calculate_token_set_ratio(text1: str, text2: str) -> float:
 def find_matching_symptoms(
     patient_symptoms: List[str],
     disease_symptoms: List[str],
-    threshold: float = 70.0
+    threshold: float = 65.0
 ) -> List[Dict[str, any]]:
     """
     Find which patient symptoms match which disease symptoms

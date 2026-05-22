@@ -1,14 +1,18 @@
 """
 Patients routes - Patient management endpoints
 """
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 import logging
 from datetime import datetime
 
 from app.models.response_models import SuccessResponse
 from app.utils.patient_code_generator import generate_patient_code
-from app.database.sqlite_connection import execute_query, get_connection
+from app.utils.auth_helper import require_role
+from app.database.mysql_connection import execute_query, get_connection
+
+security = HTTPBearer(auto_error=False)
 
 logger = logging.getLogger(__name__)
 
@@ -40,30 +44,38 @@ async def get_patients(
         # Build query
         if search:
             search_pattern = f"%{search}%"
-            
-            # Get patients
+
+            # Get patients with consultation status
             query = """
-                SELECT * FROM patients 
-                WHERE nom LIKE ? OR prenom LIKE ? OR email LIKE ? OR code_patient LIKE ?
-                ORDER BY created_at DESC
+                SELECT p.*,
+                  CASE WHEN EXISTS(SELECT 1 FROM consultations c WHERE c.patient_id = p.id) THEN 1 ELSE 0 END as a_ete_consulte
+                FROM patients p
+                WHERE p.nom LIKE ? OR p.prenom LIKE ? OR p.email LIKE ? OR p.code_patient LIKE ?
+                ORDER BY p.created_at ASC
                 LIMIT ? OFFSET ?
             """
             cursor.execute(query, (search_pattern, search_pattern, search_pattern, search_pattern, limit, skip))
             patients = [dict(row) for row in cursor.fetchall()]
-            
+
             # Count total with search
             count_query = """
-                SELECT COUNT(*) as total FROM patients 
+                SELECT COUNT(*) as total FROM patients
                 WHERE nom LIKE ? OR prenom LIKE ? OR email LIKE ? OR code_patient LIKE ?
             """
             cursor.execute(count_query, (search_pattern, search_pattern, search_pattern, search_pattern))
             total = cursor.fetchone()[0]
         else:
-            # Get patients
-            query = "SELECT * FROM patients ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            # Get patients with consultation status
+            query = """
+                SELECT p.*,
+                  CASE WHEN EXISTS(SELECT 1 FROM consultations c WHERE c.patient_id = p.id) THEN 1 ELSE 0 END as a_ete_consulte
+                FROM patients p
+                ORDER BY p.created_at ASC
+                LIMIT ? OFFSET ?
+            """
             cursor.execute(query, (limit, skip))
             patients = [dict(row) for row in cursor.fetchall()]
-            
+
             # Count total
             cursor.execute("SELECT COUNT(*) as total FROM patients")
             total = cursor.fetchone()[0]
@@ -193,8 +205,17 @@ async def create_patient(patient_data: dict):
         ))
         
         patient_id = cursor.lastrowid
+
+        # Create dossier médical (1 per patient)
+        numero_dossier = f"DOS-{datetime.now().strftime('%Y%m%d')}-{patient_id:04d}"
+        cursor.execute(
+            """INSERT INTO dossiers_medicaux (patient_id, numero_dossier)
+               VALUES (?, ?)""",
+            (patient_id, numero_dossier)
+        )
+
         conn.commit()
-        
+
         # Fetch created patient
         cursor.execute("SELECT * FROM patients WHERE id = ?", (patient_id,))
         new_patient = dict(cursor.fetchone())
@@ -292,7 +313,7 @@ async def update_patient(patient_id: int, patient_data: dict):
 
 
 @router.delete("/{patient_id}")
-async def delete_patient(patient_id: int):
+async def delete_patient(patient_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Delete patient
     
@@ -303,19 +324,22 @@ async def delete_patient(patient_id: int):
     - Success message
     """
     try:
+        # Only medecin and administrateur can delete patients
+        require_role(credentials, ['medecin', 'administrateur'])
+
         # Check if patient exists
         patient = execute_query(
             "SELECT * FROM patients WHERE id = ?",
             (patient_id,),
             fetch_one=True
         )
-        
+
         if not patient:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Patient avec l'ID {patient_id} non trouvé"
             )
-        
+
         # Delete patient
         execute_query("DELETE FROM patients WHERE id = ?", (patient_id,))
         

@@ -24,15 +24,6 @@ axiosInstance.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // Log request in development
-    if (import.meta.env.DEV) {
-      console.log('🚀 API Request:', {
-        method: config.method?.toUpperCase(),
-        url: config.url,
-        data: config.data,
-      })
-    }
-    
     return config
   },
   (error) => {
@@ -43,30 +34,9 @@ axiosInstance.interceptors.request.use(
 
 // Response interceptor - Handle errors globally
 axiosInstance.interceptors.response.use(
-  (response) => {
-    // Log response in development
-    if (import.meta.env.DEV) {
-      console.log('✅ API Response:', {
-        status: response.status,
-        url: response.config.url,
-        data: response.data,
-      })
-    }
-    
-    return response
-  },
+  (response) => response,
   async (error) => {
     const originalRequest = error.config
-    
-    // Log error in development
-    if (import.meta.env.DEV) {
-      console.error('❌ API Error:', {
-        status: error.response?.status,
-        url: error.config?.url,
-        message: error.message,
-        data: error.response?.data,
-      })
-    }
     
     // Handle 401 Unauthorized - Token expired
     if (error.response?.status === HTTP_STATUS.UNAUTHORIZED && !originalRequest._retry) {
@@ -81,7 +51,8 @@ axiosInstance.interceptors.response.use(
             refresh_token: refreshToken,
           })
           
-          const { access_token } = response.data
+          const payload = response.data?.data || response.data
+          const { access_token } = payload
           localStorage.setItem(AUTH_CONFIG.TOKEN_KEY, access_token)
           
           // Retry original request with new token

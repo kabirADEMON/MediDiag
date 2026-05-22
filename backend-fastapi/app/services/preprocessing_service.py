@@ -4,6 +4,7 @@ Preprocessing service for loading and preparing the medical dataset
 import pandas as pd
 from typing import List, Dict, Optional
 import logging
+from math import log
 from pathlib import Path
 
 from app.config import settings
@@ -59,18 +60,56 @@ class DatasetLoader:
         self.df['resultats_list'] = self.df['Résultats_attendus'].apply(
             parse_analyses_text
         )
-        
+
+        # Compute IDF weights for all symptoms
+        self._compute_symptom_idf()
+
         logger.info("Dataset preprocessing completed")
+
+    def _compute_symptom_idf(self):
+        """
+        Compute IDF (inverse document frequency) for each symptom.
+        Symptoms appearing in many diseases get a low weight; rare symptoms get high weight.
+        Formula: idf = log((N+1) / (df+1)) + 1
+        """
+        freq: Dict[str, int] = {}
+        for symptoms_list in self.df['cleaned_symptoms']:
+            seen: set = set()
+            for s in symptoms_list:
+                if s and s not in seen:
+                    freq[s] = freq.get(s, 0) + 1
+                    seen.add(s)
+
+        n = len(self.df)
+        self.symptom_idf: Dict[str, float] = {
+            s: log((n + 1) / (count + 1)) + 1.0
+            for s, count in freq.items()
+        }
+        logger.info(f"IDF computed for {len(self.symptom_idf)} unique symptoms")
     
+    def get_symptom_idf(self, symptom: str) -> float:
+        """
+        Return the IDF weight for a symptom.
+        Unknown symptoms are treated as maximally rare (high diagnostic value).
+        """
+        if not hasattr(self, 'symptom_idf'):
+            return 1.0
+        if symptom in self.symptom_idf:
+            return self.symptom_idf[symptom]
+        # Unknown symptom: treat as appearing in 1 disease (high IDF)
+        n = len(self.df) if self.df is not None else 1000
+        return log((n + 1) / 2) + 1.0
+
     def get_all_diseases(self) -> pd.DataFrame:
         """Get all diseases"""
         return self.df
     
     def filter_by_age(self, age: int) -> pd.DataFrame:
-        """Filter diseases by patient age"""
+        """Filter diseases by patient age. age=0 means unknown — skip filter."""
         if self.df is None:
             return pd.DataFrame()
-        
+        if age <= 0:
+            return self.df
         return self.df[
             (self.df['Age_Min'] <= age) & (self.df['Age_Max'] >= age)
         ]

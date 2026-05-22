@@ -9,120 +9,112 @@ import jwt
 
 from app.config import settings
 from app.models.response_models import SuccessResponse
+from app.database.mysql_connection import get_connection
+from app.utils.auth_helper import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
-# Mock users database (à remplacer par une vraie base de données)
-users_db = [
-    {
-        "id": 1,
-        "email": "medecin@demo.com",
-        "password": "demo123",  # En production, utiliser bcrypt
-        "nom": "Dupont",
-        "prenom": "Jean",
-        "role": "medecin",
-        "specialite": "Médecine générale"
-    },
-    {
-        "id": 2,
-        "email": "infirmier@demo.com",
-        "password": "demo123",
-        "nom": "Martin",
-        "prenom": "Marie",
-        "role": "infirmier",
-        "specialite": None
-    },
-    {
-        "id": 3,
-        "email": "admin@demo.com",
-        "password": "demo123",
-        "nom": "Admin",
-        "prenom": "Super",
-        "role": "administrateur",
-        "specialite": None
-    }
-]
-
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
-    """Create JWT access token"""
     to_encode = data.copy()
-    
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(data: dict):
-    """Create JWT refresh token"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
-    
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+_SUBCLASS_FIELDS = """
+    SELECT u.*,
+           m.numero_rpps, m.service AS service_dept,
+           inf.grade,
+           adm.niveau_acces
+    FROM users u
+    LEFT JOIN medecins       m   ON m.user_id   = u.id
+    LEFT JOIN infirmiers     inf ON inf.user_id  = u.id
+    LEFT JOIN administrateurs adm ON adm.user_id = u.id
+"""
+
+
+def _get_user_by_email(email: str) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(_SUBCLASS_FIELDS + " WHERE u.email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def _get_user_by_id(user_id: int) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(_SUBCLASS_FIELDS + " WHERE u.id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def _insert_subclass(cursor, user_id: int, role: str, data: dict):
+    """Insert into the role-specific subclass table after creating a user."""
+    if role == "medecin":
+        cursor.execute(
+            "INSERT INTO medecins (user_id, numero_rpps, service) VALUES (?, ?, ?)",
+            (user_id, data.get("numero_rpps"), data.get("service")),
+        )
+    elif role == "infirmier":
+        cursor.execute(
+            "INSERT INTO infirmiers (user_id, service, grade) VALUES (?, ?, ?)",
+            (user_id, data.get("service"), data.get("grade", "IDE")),
+        )
+    elif role == "administrateur":
+        cursor.execute(
+            "INSERT INTO administrateurs (user_id, niveau_acces) VALUES (?, ?)",
+            (user_id, data.get("niveau_acces", 1)),
+        )
 
 
 @router.post("/login")
 async def login(credentials: dict):
-    """
-    User login
-    
-    **Request Body:**
-    - email: User email
-    - password: User password
-    
-    **Returns:**
-    - access_token: JWT access token
-    - refresh_token: JWT refresh token
-    - user: User information
-    """
     try:
         email = credentials.get('email')
         password = credentials.get('password')
-        
+
         if not email or not password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email et mot de passe requis"
-            )
-        
-        # Find user
-        user = next((u for u in users_db if u['email'] == email), None)
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email ou mot de passe incorrect"
-            )
-        
-        # Verify password (en production, utiliser bcrypt)
-        if user['password'] != password:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email ou mot de passe incorrect"
-            )
-        
-        # Create tokens
+            raise HTTPException(status_code=400, detail="Email et mot de passe requis")
+
+        user = _get_user_by_email(email)
+        if not user or not verify_password(password, user['password_hash']):
+            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+        if not user.get('is_active', 1):
+            raise HTTPException(status_code=403, detail="Ce compte est désactivé. Contactez un administrateur.")
+
+        # Auto-migrate plain-text password to bcrypt on successful login
+        if not user['password_hash'].startswith(('$2b$', '$2a$', '$2y$')):
+            conn_m = get_connection()
+            cur_m = conn_m.cursor()
+            cur_m.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                          (hash_password(password), user['id']))
+            conn_m.commit()
+            conn_m.close()
+
         access_token = create_access_token(
             data={"sub": user['email'], "user_id": user['id'], "role": user['role']}
         )
         refresh_token = create_refresh_token(
             data={"sub": user['email'], "user_id": user['id']}
         )
-        
-        # Remove password from response
-        user_data = {k: v for k, v in user.items() if k != 'password'}
-        
+
+        user_data = {k: v for k, v in user.items() if k != 'password_hash'}
+
         return SuccessResponse(
             success=True,
             message="Connexion réussie",
@@ -130,247 +122,368 @@ async def login(credentials: dict):
                 "access_token": access_token,
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
-                "user": user_data
-            }
+                "user": user_data,
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Login error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de la connexion: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la connexion: {str(e)}")
 
 
 @router.post("/logout")
 async def logout():
-    """
-    User logout
-    
-    **Returns:**
-    - Success message
-    """
-    return SuccessResponse(
-        success=True,
-        message="Déconnexion réussie",
-        data={}
-    )
+    return SuccessResponse(success=True, message="Déconnexion réussie", data={})
 
 
 @router.post("/refresh")
 async def refresh_token(token_data: dict):
-    """
-    Refresh access token
-    
-    **Request Body:**
-    - refresh_token: JWT refresh token
-    
-    **Returns:**
-    - access_token: New JWT access token
-    """
     try:
-        refresh_token = token_data.get('refresh_token')
-        
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Refresh token requis"
-            )
-        
-        # Verify refresh token
+        token = token_data.get('refresh_token')
+        if not token:
+            raise HTTPException(status_code=400, detail="Refresh token requis")
+
         try:
-            payload = jwt.decode(
-                refresh_token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM]
-            )
-            email = payload.get("sub")
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             user_id = payload.get("user_id")
-            
-            if not email or not user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token invalide"
-                )
-            
-            # Find user
-            user = next((u for u in users_db if u['id'] == user_id), None)
-            
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Token invalide")
+
+            user = _get_user_by_id(user_id)
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Utilisateur non trouvé"
-                )
-            
-            # Create new access token
+                raise HTTPException(status_code=401, detail="Utilisateur non trouvé")
+
             access_token = create_access_token(
                 data={"sub": user['email'], "user_id": user['id'], "role": user['role']}
             )
-            
             return SuccessResponse(
                 success=True,
                 message="Token rafraîchi",
-                data={
-                    "access_token": access_token,
-                    "token_type": "bearer"
-                }
+                data={"access_token": access_token, "token_type": "bearer"},
             )
         except jwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token expiré"
-            )
+            raise HTTPException(status_code=401, detail="Refresh token expiré")
         except jwt.JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token invalide"
-            )
+            raise HTTPException(status_code=401, detail="Token invalide")
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Refresh token error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors du rafraîchissement du token: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Get current user information
-    
-    **Headers:**
-    - Authorization: Bearer {access_token}
-    
-    **Returns:**
-    - User information
-    """
     try:
-        token = credentials.credentials
-        
-        # Verify token
         try:
-            payload = jwt.decode(
-                token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM]
-            )
+            payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             user_id = payload.get("user_id")
-            
             if not user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token invalide"
-                )
-            
-            # Find user
-            user = next((u for u in users_db if u['id'] == user_id), None)
-            
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Utilisateur non trouvé"
-                )
-            
-            # Remove password from response
-            user_data = {k: v for k, v in user.items() if k != 'password'}
-            
-            return SuccessResponse(
-                success=True,
-                message="Utilisateur trouvé",
-                data=user_data
-            )
+                raise HTTPException(status_code=401, detail="Token invalide")
         except jwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token expiré"
-            )
+            raise HTTPException(status_code=401, detail="Token expiré")
         except jwt.JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token invalide"
-            )
+            raise HTTPException(status_code=401, detail="Token invalide")
+
+        user = _get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="Utilisateur non trouvé")
+
+        user_data = {k: v for k, v in user.items() if k != 'password_hash'}
+        return SuccessResponse(success=True, message="Utilisateur trouvé", data=user_data)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Get current user error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de la récupération de l'utilisateur: {str(e)}"
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/users")
+async def get_all_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("role") != "administrateur":
+            raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, email, nom, prenom, role, specialite, is_active, created_at FROM users ORDER BY id")
+        users = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return SuccessResponse(
+            success=True,
+            message=f"{len(users)} utilisateur(s)",
+            data={"users": users, "total": len(users)},
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/users")
+async def create_user(
+    user_data: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Create a new user — Admin only."""
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("role") != "administrateur":
+            raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+
+        required = ['email', 'password', 'nom', 'prenom', 'role']
+        for field in required:
+            if not user_data.get(field):
+                raise HTTPException(status_code=400, detail=f"Champ requis: {field}")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data['email'],))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Email déjà utilisé")
+
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """INSERT INTO users (email, password_hash, nom, prenom, role, specialite, must_change_password, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+            (
+                user_data['email'],
+                hash_password(user_data['password']),
+                user_data['nom'],
+                user_data['prenom'],
+                user_data['role'],
+                user_data.get('specialite'),
+                now,
+            ),
+        )
+        new_id = cursor.lastrowid
+        _insert_subclass(cursor, new_id, user_data['role'], user_data)
+        conn.commit()
+        conn.close()
+
+        return SuccessResponse(
+            success=True,
+            message="Utilisateur créé",
+            data={
+                "id": new_id,
+                "email": user_data['email'],
+                "nom": user_data['nom'],
+                "prenom": user_data['prenom'],
+                "role": user_data['role'],
+                "specialite": user_data.get('specialite'),
+                "created_at": now,
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("role") != "administrateur":
+            raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+        if payload.get("user_id") == user_id:
+            raise HTTPException(status_code=400, detail="Impossible de supprimer votre propre compte")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+
+        return SuccessResponse(success=True, message="Utilisateur supprimé", data={"id": user_id})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/users/{user_id}/toggle-active")
+async def toggle_user_active(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("role") != "administrateur":
+            raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, is_active FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+        new_status = 0 if row['is_active'] else 1
+        cursor.execute("UPDATE users SET is_active = ? WHERE id = ?", (new_status, user_id))
+        conn.commit()
+        conn.close()
+
+        action = "activé" if new_status else "désactivé"
+        return SuccessResponse(
+            success=True,
+            message=f"Compte {action} avec succès",
+            data={"id": user_id, "is_active": bool(new_status)}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/me")
+async def update_profile(
+    profile_data: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("user_id")
+
+        current_password = profile_data.get('current_password')
+        if not current_password:
+            raise HTTPException(status_code=400, detail="Mot de passe requis pour modifier le profil")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row or not verify_password(current_password, row['password_hash']):
+            conn.close()
+            raise HTTPException(status_code=400, detail="Mot de passe incorrect")
+
+        allowed = ['nom', 'prenom', 'specialite']
+        updates = {k: v for k, v in profile_data.items() if k in allowed}
+        if not updates:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Aucun champ valide à mettre à jour")
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [user_id]
+
+        cursor.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+
+        cursor.execute("SELECT id, email, nom, prenom, role, specialite FROM users WHERE id = ?", (user_id,))
+        user = dict(cursor.fetchone())
+        conn.close()
+
+        return SuccessResponse(success=True, message="Profil mis à jour", data=user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/me/password")
+async def change_password(
+    pwd_data: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    try:
+        payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("user_id")
+
+        current_password = pwd_data.get('current_password', '')
+        new_password = pwd_data.get('new_password', '')
+
+        if not current_password or not new_password:
+            raise HTTPException(status_code=400, detail="Mot de passe actuel et nouveau requis")
+        if len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 6 caractères")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row or not verify_password(current_password, row['password_hash']):
+            conn.close()
+            raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+
+        cursor.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (hash_password(new_password), user_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return SuccessResponse(success=True, message="Mot de passe modifié avec succès", data={})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/register")
 async def register(user_data: dict):
-    """
-    Register new user
-    
-    **Request Body:**
-    - email: User email
-    - password: User password
-    - nom: Last name
-    - prenom: First name
-    - role: User role (medecin, infirmier, administrateur)
-    
-    **Returns:**
-    - Created user with tokens
-    """
     try:
-        # Validate required fields
         required_fields = ['email', 'password', 'nom', 'prenom', 'role']
         for field in required_fields:
-            if field not in user_data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Champ requis manquant: {field}"
-                )
-        
-        # Check if user already exists
-        existing_user = next((u for u in users_db if u['email'] == user_data['email']), None)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Un utilisateur avec cet email existe déjà"
-            )
-        
-        # Create new user
-        new_user = {
-            "id": len(users_db) + 1,
-            "email": user_data['email'],
-            "password": user_data['password'],  # En production, hasher avec bcrypt
-            "nom": user_data['nom'],
-            "prenom": user_data['prenom'],
-            "role": user_data['role'],
-            "specialite": user_data.get('specialite'),
-            "created_at": datetime.now().isoformat()
-        }
-        
-        users_db.append(new_user)
-        
-        # Create tokens
-        access_token = create_access_token(
-            data={"sub": new_user['email'], "user_id": new_user['id'], "role": new_user['role']}
+            if not user_data.get(field):
+                raise HTTPException(status_code=400, detail=f"Champ requis manquant: {field}")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data['email'],))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Un utilisateur avec cet email existe déjà")
+
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """INSERT INTO users (email, password_hash, nom, prenom, role, specialite, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_data['email'],
+                hash_password(user_data['password']),
+                user_data['nom'],
+                user_data['prenom'],
+                user_data['role'],
+                user_data.get('specialite'),
+                now,
+            ),
         )
-        
-        # Remove password from response
-        user_response = {k: v for k, v in new_user.items() if k != 'password'}
-        
+        new_id = cursor.lastrowid
+        _insert_subclass(cursor, new_id, user_data['role'], user_data)
+        conn.commit()
+        conn.close()
+
+        access_token = create_access_token(
+            data={"sub": user_data['email'], "user_id": new_id, "role": user_data['role']}
+        )
+
         return SuccessResponse(
             success=True,
             message="Utilisateur créé avec succès",
             data={
                 "access_token": access_token,
                 "token_type": "bearer",
-                "user": user_response
-            }
+                "user": {
+                    "id": new_id,
+                    "email": user_data['email'],
+                    "nom": user_data['nom'],
+                    "prenom": user_data['prenom'],
+                    "role": user_data['role'],
+                    "specialite": user_data.get('specialite'),
+                },
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Registration error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de l'inscription: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'inscription: {str(e)}")

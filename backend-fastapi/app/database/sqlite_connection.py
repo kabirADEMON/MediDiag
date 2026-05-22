@@ -57,6 +57,9 @@ def init_database():
                 nom TEXT NOT NULL,
                 prenom TEXT NOT NULL,
                 role TEXT NOT NULL,
+                specialite TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                must_change_password INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT
             )
@@ -96,7 +99,57 @@ def init_database():
                 FOREIGN KEY (patient_id) REFERENCES patients (id)
             )
         """)
-        
+
+        # Create vitals table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vitals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL,
+                infirmier_id INTEGER,
+                temperature TEXT,
+                pression TEXT,
+                pouls TEXT,
+                spo2 TEXT,
+                poids TEXT,
+                taille TEXT,
+                observations TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (patient_id) REFERENCES patients (id),
+                FOREIGN KEY (infirmier_id) REFERENCES users (id)
+            )
+        """)
+
+        # Create diagnostic_feedback table (for model retraining)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS diagnostic_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consultation_id INTEGER NOT NULL,
+                patient_id INTEGER NOT NULL,
+                medecin_id INTEGER NOT NULL,
+                diagnostic_ia TEXT NOT NULL,
+                score_ia REAL,
+                valide INTEGER NOT NULL DEFAULT 0,
+                diagnostic_final TEXT,
+                score_final REAL,
+                commentaire TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (consultation_id) REFERENCES consultations (id),
+                FOREIGN KEY (patient_id) REFERENCES patients (id),
+                FOREIGN KEY (medecin_id) REFERENCES users (id)
+            )
+        """)
+
+        # Migrations — add columns if missing
+        for migration in [
+            "ALTER TABLE users ADD COLUMN specialite TEXT",
+            "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0",
+        ]:
+            try:
+                cursor.execute(migration)
+            except Exception:
+                pass
+
         conn.commit()
         logger.info(f"✅ Database initialized at {DB_PATH}")
         

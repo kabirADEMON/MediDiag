@@ -4,7 +4,7 @@
  */
 
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAuth } from '@/context/AuthContext'
+import { useAuth } from '@/features/auth/context/AuthContext'
 import { LoadingPage } from '@/components/ui/Loading'
 
 export function ProtectedRoute({ children, requiredRole = null, requiredPermission = null }) {

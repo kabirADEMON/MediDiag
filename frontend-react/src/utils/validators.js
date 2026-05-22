@@ -26,7 +26,7 @@ export const patientSchema = z.object({
     errorMap: () => ({ message: 'Sélectionnez un sexe' }),
   }),
   telephone: z.string()
-    .regex(/^[0-9]{10}$/, 'Numéro de téléphone invalide (10 chiffres)')
+    .regex(/^\+[1-9]\d{6,14}$/, 'Numéro invalide (format E.164, ex: +2250102030405)')
     .optional()
     .or(z.literal('')),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
@@ -90,7 +90,7 @@ export const registerSchema = z.object({
   confirm_password: z.string(),
   role: z.enum(['administrateur', 'medecin', 'infirmier']),
   specialite: optionalString,
-  telephone: z.string().regex(/^[0-9]{10}$/, 'Numéro invalide').optional(),
+  telephone: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Numéro invalide (E.164)').optional(),
 }).refine((data) => data.password === data.confirm_password, {
   message: 'Les mots de passe ne correspondent pas',
   path: ['confirm_password'],
@@ -101,7 +101,7 @@ export const profileSchema = z.object({
   nom: requiredString,
   prenom: requiredString,
   email: requiredEmail,
-  telephone: z.string().regex(/^[0-9]{10}$/, 'Numéro invalide').optional().or(z.literal('')),
+  telephone: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Numéro invalide (E.164)').optional().or(z.literal('')),
   specialite: optionalString,
   bio: optionalString,
 })

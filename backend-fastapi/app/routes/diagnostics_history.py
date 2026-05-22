@@ -7,11 +7,12 @@ import logging
 import json
 
 from app.models.response_models import SuccessResponse
-from app.database.sqlite_connection import execute_query, get_connection
+from app.database.mysql_connection import execute_query, get_connection
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/diagnostics", tags=["Diagnostics History"])
+
 
 
 @router.get("/")
@@ -37,7 +38,7 @@ async def get_all_diagnostics(
 
         if patient_id:
             query = """
-                SELECT d.*, p.nom || ' ' || p.prenom as patient_nom,
+                SELECT d.*, CONCAT(p.nom, ' ', p.prenom) as patient_nom,
                        p.code_patient, p.sexe
                 FROM diagnostics d
                 JOIN patients p ON d.patient_id = p.id
@@ -52,7 +53,7 @@ async def get_all_diagnostics(
             total = cursor.fetchone()[0]
         else:
             query = """
-                SELECT d.*, p.nom || ' ' || p.prenom as patient_nom,
+                SELECT d.*, CONCAT(p.nom, ' ', p.prenom) as patient_nom,
                        p.code_patient, p.sexe
                 FROM diagnostics d
                 JOIN patients p ON d.patient_id = p.id
@@ -96,6 +97,59 @@ async def get_all_diagnostics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erreur lors de la récupération des diagnostics: {str(e)}"
+        )
+
+
+@router.get("/weekly")
+async def get_weekly_stats():
+    """
+    Get consultations and diagnostics counts for the last 7 days
+    """
+    try:
+        from datetime import date, timedelta
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        today = date.today()
+        days_fr = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+        result = []
+
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            d_str = d.isoformat()
+            day_label = days_fr[d.weekday()]
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM consultations WHERE date_consultation LIKE ?",
+                (f"{d_str}%",)
+            )
+            consult_count = cursor.fetchone()[0]
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM diagnostics WHERE created_at LIKE ?",
+                (f"{d_str}%",)
+            )
+            diag_count = cursor.fetchone()[0]
+
+            result.append({
+                "day": day_label,
+                "date": d_str,
+                "consultations": consult_count,
+                "diagnostics": diag_count,
+            })
+
+        conn.close()
+
+        return SuccessResponse(
+            success=True,
+            message="Statistiques hebdomadaires",
+            data=result
+        )
+    except Exception as e:
+        logger.error(f"Error getting weekly stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur lors des statistiques hebdomadaires: {str(e)}"
         )
 
 

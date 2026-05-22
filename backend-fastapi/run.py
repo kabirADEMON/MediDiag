@@ -6,7 +6,7 @@ from app.config import settings
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"🏥 {settings.APP_NAME} v{settings.APP_VERSION}")
+    print(f"[MediDiag] {settings.APP_NAME} v{settings.APP_VERSION}")
     print("=" * 60)
     print(f"Environment: {settings.ENVIRONMENT}")
     print(f"Host: {settings.HOST}:{settings.PORT}")

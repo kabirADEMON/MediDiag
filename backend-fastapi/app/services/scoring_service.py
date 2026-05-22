@@ -90,67 +90,63 @@ class ScoringService:
         self,
         provided_analyses: Dict[str, any],
         expected_analyses: List[str],
-        expected_results: List[str]
+        expected_results: List[str],
+        analyses_anomalies: List[str] = None,
     ) -> float:
         """
-        Calculate how well provided analyses match expected results
-        
-        Args:
-            provided_analyses: Dict of "Analysis: Result" -> value (1 for selected)
-            expected_analyses: List of expected analyses for the disease
-            expected_results: List of expected results for the disease
-            
-        Returns:
-            Match score (0-100)
+        Calculate how well provided analyses match expected results.
+
+        Abnormal analyses matching a disease's expected pattern score much higher
+        than normal ones (abnormal value confirms the disease, normal value just
+        confirms the test was ordered).
+
+        Returns a bonus score 0-100; no penalty for missing analyses.
         """
         if not provided_analyses or not expected_analyses:
             return 0.0
-        
-        # Build expected pairs from the disease
-        expected_pairs = []
-        for i, analysis in enumerate(expected_analyses):
-            if i < len(expected_results):
-                expected_pairs.append(f"{analysis}: {expected_results[i]}")
-            else:
-                expected_pairs.append(analysis)
-        
-        # Count matches
-        matches = 0
-        total_provided = len(provided_analyses)
-        
-        for provided_pair in provided_analyses.keys():
-            # Check if this pair matches any expected pair
-            for expected_pair in expected_pairs:
-                # Fuzzy match: check if key parts are present
-                provided_lower = provided_pair.lower()
-                expected_lower = expected_pair.lower()
-                
-                # Extract analysis name (before ":")
-                provided_analysis = provided_lower.split(':')[0].strip()
-                expected_analysis = expected_lower.split(':')[0].strip()
-                
-                # If analysis names match
-                if provided_analysis in expected_analysis or expected_analysis in provided_analysis:
-                    # Check if results also match (after ":")
-                    if ':' in provided_lower and ':' in expected_lower:
-                        provided_result = provided_lower.split(':', 1)[1].strip()
-                        expected_result = expected_lower.split(':', 1)[1].strip()
-                        
-                        # Fuzzy match on results
-                        if provided_result in expected_result or expected_result in provided_result:
-                            matches += 1
-                            break
-                    else:
-                        # Just analysis name matches
-                        matches += 0.5
+
+        anomaly_set = {a.lower() for a in (analyses_anomalies or [])}
+
+        try:
+            if isinstance(expected_analyses, str):
+                expected_analyses = [a.strip() for a in expected_analyses.split(';')]
+
+            expected_lower = [a.lower() for a in expected_analyses]
+
+            total_bonus = 0.0
+            max_per_match_abnormal = 25.0   # abnormal + name match → strong confirmation
+            max_per_match_normal   = 8.0    # normal  + name match → weak confirmation
+
+            for provided_name in provided_analyses.keys():
+                p_low = provided_name.lower()
+                p_terms = p_low.split()
+
+                for exp in expected_lower:
+                    match_found = (
+                        p_low == exp
+                        or p_low in exp
+                        or exp in p_low
+                        or any(
+                            len(pt) >= 3 and et.startswith(pt[:3])
+                            for pt in p_terms
+                            for et in exp.split()
+                        )
+                    )
+                    if match_found:
+                        is_abnormal = p_low in anomaly_set
+                        bonus = max_per_match_abnormal if is_abnormal else max_per_match_normal
+                        total_bonus += bonus
+                        logger.debug(
+                            f"Analyses match: '{provided_name}' ≈ '{exp}' "
+                            f"({'abnormal' if is_abnormal else 'normal'}) +{bonus}"
+                        )
                         break
-        
-        # Calculate score
-        if total_provided == 0:
+
+            return min(100.0, round(total_bonus, 2))
+
+        except Exception as e:
+            logger.error(f"Error calculating analyses match score: {e}")
             return 0.0
-        
-        score = (matches / total_provided) * 100
-        return min(100.0, score)
     
     def calculate_final_score(
         self,
@@ -171,10 +167,10 @@ class ScoringService:
         Returns:
             Final weighted score (0-100)
         """
-        # Weights
-        SYMPTOM_WEIGHT = 0.60  # 60% - Most important
-        AGE_WEIGHT = 0.15      # 15%
-        SEX_WEIGHT = 0.10      # 10%
+        # Weights — symptoms dominate as primary clinical evidence
+        SYMPTOM_WEIGHT = 0.70  # 70%
+        AGE_WEIGHT = 0.10      # 10%
+        SEX_WEIGHT = 0.05      #  5%
         ANALYSES_WEIGHT = 0.15 # 15%
         
         final_score = (

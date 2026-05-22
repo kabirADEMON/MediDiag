@@ -6,6 +6,13 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
+class VarianteResult(BaseModel):
+    """Severity variant of a main diagnosis (embedded in DiagnosticResult.variantes)"""
+    maladie: str
+    score: float = Field(..., ge=0, le=100)
+    urgence: str
+
+
 class DiagnosticResult(BaseModel):
     """Single diagnostic result"""
     maladie: str
@@ -15,6 +22,7 @@ class DiagnosticResult(BaseModel):
     compatibilite_sexe: bool
     examens_recommandes: List[str]
     arguments: List[str] = Field(..., description="Matching symptoms/reasons")
+    variantes: List[VarianteResult] = Field(default_factory=list, description="Same-root severity variants")
     
     class Config:
         json_schema_extra = {

@@ -1,313 +1,304 @@
-/**
- * Settings Page
- * Application settings and preferences
- */
-
 import { useState } from 'react'
-import { Settings as SettingsIcon, User, Bell, Shield, Database, CheckCircle, Eye, EyeOff } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Alert } from '@/components/ui/Alert'
-import { Badge } from '@/components/ui/Badge'
-import { useAuth } from '@/context/AuthContext'
+import { User, Shield, Database, CheckCircle, Eye, EyeOff, Save, KeyRound } from 'lucide-react'
+import { useAuth } from '@/features/auth/context/AuthContext'
+import { cn } from '@/utils/helpers'
+
+const ROLE_LABEL = {
+  medecin: 'Médecin',
+  infirmier: 'Infirmier(e)',
+  administrateur: 'Administrateur',
+}
+
+function FieldRow({ label, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function inputCls(error) {
+  return cn(
+    'w-full px-3.5 py-2.5 rounded-lg border text-sm text-slate-900 placeholder-slate-400',
+    'focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors',
+    error ? 'border-red-300 bg-red-50' : 'border-slate-300 bg-white hover:border-slate-400'
+  )
+}
 
 export function Settings() {
-  const { user, logout } = useAuth()
-  const [notifications, setNotifications] = useState({
-    email: true,
-    alerts: true,
-    reminders: false,
-  })
-  const [showPasswordForm, setShowPasswordForm] = useState(false)
-  const [passwordData, setPasswordData] = useState({
-    current: '',
-    new: '',
-    confirm: '',
-  })
-  const [showPasswords, setShowPasswords] = useState({
-    current: false,
-    new: false,
-    confirm: false,
-  })
-  const [passwordMsg, setPasswordMsg] = useState('')
-  const [passwordError, setPasswordError] = useState('')
-  const [savingPassword, setSavingPassword] = useState(false)
+  const { user, updateProfile, changePassword } = useAuth()
+  const role = user?.role || 'medecin'
 
-  const handleNotificationChange = (key) => {
-    setNotifications((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
+  // Profile form
+  const [profile, setProfile] = useState({
+    nom: user?.nom || '',
+    prenom: user?.prenom || '',
+    specialite: user?.specialite || '',
+  })
+  const [profilePwd, setProfilePwd] = useState('')
+  const [showProfilePwd, setShowProfilePwd] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileMsg, setProfileMsg] = useState('')
+  const [profileError, setProfileError] = useState('')
 
-  const handlePasswordChange = async () => {
-    setPasswordMsg('')
-    setPasswordError('')
+  // Password form
+  const [pwd, setPwd] = useState({ current: '', new: '', confirm: '' })
+  const [showPwd, setShowPwd] = useState({ current: false, new: false, confirm: false })
+  const [savingPwd, setSavingPwd] = useState(false)
+  const [pwdMsg, setPwdMsg] = useState('')
+  const [pwdError, setPwdError] = useState('')
 
-    if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
-      setPasswordError('Veuillez remplir tous les champs')
+  const handleSaveProfile = async (e) => {
+    e.preventDefault()
+    setProfileMsg('')
+    setProfileError('')
+    if (!profile.nom.trim() || !profile.prenom.trim()) {
+      setProfileError('Nom et prénom sont requis')
       return
     }
-    if (passwordData.new !== passwordData.confirm) {
-      setPasswordError('Les nouveaux mots de passe ne correspondent pas')
+    if (!profilePwd) {
+      setProfileError('Mot de passe requis pour valider les modifications')
       return
     }
-    if (passwordData.new.length < 6) {
-      setPasswordError('Le nouveau mot de passe doit contenir au moins 6 caractères')
-      return
-    }
-
     try {
-      setSavingPassword(true)
-      // Simulate password change (backend doesn't support it yet)
-      await new Promise((r) => setTimeout(r, 800))
-      setPasswordMsg('Mot de passe modifié avec succès')
-      setPasswordData({ current: '', new: '', confirm: '' })
-      setShowPasswordForm(false)
-    } catch (err) {
-      setPasswordError('Erreur lors du changement de mot de passe')
+      setSavingProfile(true)
+      const result = await updateProfile({ ...profile, current_password: profilePwd })
+      if (result.success) {
+        setProfilePwd('')
+        setProfileMsg('Profil mis à jour avec succès')
+        setTimeout(() => setProfileMsg(''), 4000)
+      } else {
+        setProfileError(result.error || 'Erreur lors de la mise à jour')
+      }
+    } catch {
+      setProfileError('Une erreur est survenue')
     } finally {
-      setSavingPassword(false)
+      setSavingProfile(false)
     }
   }
 
-  const handleLogoutAllDevices = async () => {
-    if (window.confirm('Êtes-vous sûr de vouloir vous déconnecter de tous les appareils ?')) {
-      await logout()
+  const handleChangePassword = async (e) => {
+    e.preventDefault()
+    setPwdMsg('')
+    setPwdError('')
+    if (!pwd.current || !pwd.new || !pwd.confirm) {
+      setPwdError('Tous les champs sont requis')
+      return
     }
-  }
-
-  const roleLabel = {
-    medecin: 'Médecin',
-    infirmier: 'Infirmier(e)',
-    administrateur: 'Administrateur',
+    if (pwd.new !== pwd.confirm) {
+      setPwdError('Les nouveaux mots de passe ne correspondent pas')
+      return
+    }
+    if (pwd.new.length < 6) {
+      setPwdError('Minimum 6 caractères')
+      return
+    }
+    try {
+      setSavingPwd(true)
+      const res = await changePassword({
+        current_password: pwd.current,
+        new_password: pwd.new,
+      })
+      if (res.success) {
+        setPwdMsg('Mot de passe modifié avec succès')
+        setPwd({ current: '', new: '', confirm: '' })
+        sessionStorage.removeItem('pwd_banner_dismissed')
+        setTimeout(() => setPwdMsg(''), 4000)
+      } else {
+        setPwdError(res.error || res.data?.detail || 'Mot de passe actuel incorrect')
+      }
+    } catch {
+      setPwdError('Une erreur est survenue')
+    } finally {
+      setSavingPwd(false)
+    }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Paramètres</h1>
-        <p className="text-gray-600 mt-1">Gérez vos préférences et votre compte</p>
+        <h1 className="text-xl font-bold text-slate-900">Paramètres</h1>
+        <p className="text-sm text-slate-400 mt-0.5">Gérez votre profil et votre sécurité</p>
       </div>
 
-      {passwordMsg && (
-        <Alert variant="success" onClose={() => setPasswordMsg('')}>
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" />
-            {passwordMsg}
+      {/* Profile section */}
+      <div className="bg-white rounded-xl border border-slate-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+          <User className="w-4 h-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-800">Informations du profil</h2>
+        </div>
+        <div className="p-6">
+          {/* Avatar + role */}
+          <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+            <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-lg font-bold">
+              {(user?.prenom?.[0] || '') + (user?.nom?.[0] || '')}
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{user?.prenom} {user?.nom}</p>
+              <p className="text-sm text-slate-500">{user?.email}</p>
+              <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                {ROLE_LABEL[role] || role}
+              </span>
+            </div>
           </div>
-        </Alert>
-      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Profile */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="w-5 h-5" />
-              Profil utilisateur
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-bold text-xl">
-                {user?.prenom?.[0]}{user?.nom?.[0]}
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-lg">
-                  {user?.prenom} {user?.nom}
-                </p>
-                <p className="text-gray-500">{user?.email}</p>
-                <Badge variant="info" className="mt-1">
-                  {roleLabel[user?.role] || user?.role}
-                </Badge>
-              </div>
+          {profileMsg && (
+            <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">
+              <CheckCircle className="w-4 h-4 shrink-0" /> {profileMsg}
+            </div>
+          )}
+          {profileError && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {profileError}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FieldRow label="Prénom">
+                <input
+                  className={inputCls(false)}
+                  value={profile.prenom}
+                  onChange={e => setProfile(p => ({ ...p, prenom: e.target.value }))}
+                  placeholder="Prénom"
+                />
+              </FieldRow>
+              <FieldRow label="Nom">
+                <input
+                  className={inputCls(false)}
+                  value={profile.nom}
+                  onChange={e => setProfile(p => ({ ...p, nom: e.target.value }))}
+                  placeholder="Nom de famille"
+                />
+              </FieldRow>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-gray-600">Nom</p>
-                <p className="font-medium">{user?.nom || '—'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Prénom</p>
-                <p className="font-medium">{user?.prenom || '—'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Email</p>
-                <p className="font-medium">{user?.email || '—'}</p>
-              </div>
-              {user?.specialite && (
-                <div>
-                  <p className="text-sm text-gray-600">Spécialité</p>
-                  <p className="font-medium">{user.specialite}</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+            {role !== 'administrateur' && (
+              <FieldRow label="Spécialité">
+                <input
+                  className={inputCls(false)}
+                  value={profile.specialite}
+                  onChange={e => setProfile(p => ({ ...p, specialite: e.target.value }))}
+                  placeholder="Ex : Médecine générale, Cardiologie..."
+                />
+              </FieldRow>
+            )}
 
-        {/* Notifications */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="w-5 h-5" />
-              Notifications
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              {[
-                { key: 'email', label: 'Notifications par email', desc: "Recevoir les alertes par email" },
-                { key: 'alerts', label: 'Alertes diagnostics', desc: 'Notifications pour les diagnostics critiques' },
-                { key: 'reminders', label: 'Rappels consultations', desc: 'Rappels avant les consultations' },
-              ].map(({ key, label, desc }) => (
-                <label
-                  key={key}
-                  className="flex items-start justify-between p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+            <FieldRow label="Mot de passe actuel (requis pour valider)">
+              <div className="relative">
+                <input
+                  type={showProfilePwd ? 'text' : 'password'}
+                  className={inputCls(!profilePwd && profileError) + ' pr-10'}
+                  value={profilePwd}
+                  onChange={e => setProfilePwd(e.target.value)}
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowProfilePwd(p => !p)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900">{label}</p>
-                    <p className="text-sm text-gray-500">{desc}</p>
-                  </div>
-                  <div className="relative flex-shrink-0 ml-4">
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={notifications[key]}
-                      onChange={() => handleNotificationChange(key)}
-                    />
-                    <div
-                      className={`w-11 h-6 rounded-full transition-colors ${
-                        notifications[key] ? 'bg-primary-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform mt-1 ${
-                          notifications[key] ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                  {showProfilePwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </FieldRow>
 
-        {/* Security */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              Sécurité
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {passwordError && (
-              <Alert variant="error" onClose={() => setPasswordError('')}>
-                {passwordError}
-              </Alert>
-            )}
-
-            {!showPasswordForm ? (
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => setShowPasswordForm(true)}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={savingProfile}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
               >
-                Changer le mot de passe
-              </Button>
-            ) : (
-              <div className="space-y-3">
-                <h4 className="font-medium text-gray-900">Changer le mot de passe</h4>
+                <Save className="w-4 h-4" />
+                {savingProfile ? 'Enregistrement...' : 'Enregistrer le profil'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
 
-                {[
-                  { key: 'current', label: 'Mot de passe actuel' },
-                  { key: 'new', label: 'Nouveau mot de passe' },
-                  { key: 'confirm', label: 'Confirmer le nouveau mot de passe' },
-                ].map(({ key, label }) => (
-                  <div key={key} className="relative">
-                    <Input
-                      label={label}
-                      type={showPasswords[key] ? 'text' : 'password'}
-                      value={passwordData[key]}
-                      onChange={(e) =>
-                        setPasswordData((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-8 text-gray-400 hover:text-gray-600"
-                      onClick={() =>
-                        setShowPasswords((prev) => ({ ...prev, [key]: !prev[key] }))
-                      }
-                    >
-                      {showPasswords[key] ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                ))}
+      {/* Password section */}
+      <div className="bg-white rounded-xl border border-slate-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-800">Sécurité</h2>
+        </div>
+        <div className="p-6">
+          {pwdMsg && (
+            <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">
+              <CheckCircle className="w-4 h-4 shrink-0" /> {pwdMsg}
+            </div>
+          )}
+          {pwdError && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {pwdError}
+            </div>
+          )}
 
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setShowPasswordForm(false)
-                      setPasswordData({ current: '', new: '', confirm: '' })
-                      setPasswordError('')
-                    }}
-                    disabled={savingPassword}
-                  >
-                    Annuler
-                  </Button>
-                  <Button
-                    variant="primary"
-                    onClick={handlePasswordChange}
-                    loading={savingPassword}
-                    disabled={savingPassword}
-                    className="flex-1"
-                  >
-                    Enregistrer
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <Button
-              variant="danger"
-              className="w-full"
-              onClick={handleLogoutAllDevices}
-            >
-              Déconnexion de tous les appareils
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* System info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="w-5 h-5" />
-              Système
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          <form onSubmit={handleChangePassword} className="space-y-4">
             {[
-              { label: 'Version', value: 'MediDiag v1.0.0' },
-              { label: 'Base de données', value: '1000 maladies chargées' },
-              { label: 'Modèle IA', value: 'Random Forest + Fuzzy Matching' },
-              { label: 'Précision du modèle', value: '90.7%' },
-              { label: 'Algorithme', value: 'Hybrid ML (70%) + Fuzzy (30%)' },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">{label}</p>
-                <p className="font-medium text-gray-900">{value}</p>
-              </div>
+              { key: 'current', label: 'Mot de passe actuel' },
+              { key: 'new', label: 'Nouveau mot de passe' },
+              { key: 'confirm', label: 'Confirmer le nouveau mot de passe' },
+            ].map(({ key, label }) => (
+              <FieldRow key={key} label={label}>
+                <div className="relative">
+                  <input
+                    type={showPwd[key] ? 'text' : 'password'}
+                    className={inputCls(false) + ' pr-10'}
+                    value={pwd[key]}
+                    onChange={e => setPwd(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPwd(p => ({ ...p, [key]: !p[key] }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPwd[key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </FieldRow>
             ))}
-          </CardContent>
-        </Card>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={savingPwd}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-900 disabled:opacity-60 transition-colors"
+              >
+                <KeyRound className="w-4 h-4" />
+                {savingPwd ? 'Modification...' : 'Modifier le mot de passe'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* System info */}
+      <div className="bg-white rounded-xl border border-slate-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+          <Database className="w-4 h-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-800">Informations système</h2>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {[
+            { label: 'Version', value: 'MediDiag v1.0.0' },
+            { label: 'Modèle IA', value: 'Random Forest + Fuzzy Matching' },
+            { label: 'Précision', value: '90.7%' },
+            { label: 'Base de données', value: '1 000 maladies référencées' },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-slate-500">{label}</span>
+              <span className="text-sm font-medium text-slate-900">{value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
