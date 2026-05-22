@@ -6,12 +6,63 @@ import logging
 from datetime import datetime
 
 from app.models.request_models import DiagnosticRequest
-from app.models.response_models import DiagnosticResult, DiagnosticResponse
+from app.models.response_models import DiagnosticResult, DiagnosticResponse, VarianteResult
 from app.services.matching_service import get_matching_engine
 from app.services.scoring_service import get_scoring_service
 from app.services.recommendation_service import get_recommendation_service
+from app.services.clinical_scoring_service import get_clinical_scoring_manager
 
 logger = logging.getLogger(__name__)
+
+# ── Anti-anchoring ────────────────────────────────────────────────────────────
+
+def _apply_anti_anchoring(results: List[DiagnosticResult]) -> List[DiagnosticResult]:
+    """
+    Cluster results by pathological root = text before the first '('.
+
+    "Hépatite A (Sévère)" → root "Hépatite A"
+    "Hépatite A (Aiguë)"  → root "Hépatite A"  → variant of the winner above
+    "Hépatite A"          → root "Hépatite A"  → winner (if highest score)
+
+    Returns the 4 highest-scoring distinct roots, each with same-root variants
+    embedded in .variantes (ordered by descending score).
+    Results must be pre-sorted descending by score.
+    """
+    clusters: Dict[str, DiagnosticResult] = {}        # root → winner
+    cluster_variants: Dict[str, List[VarianteResult]] = {}
+
+    for r in results:
+        root = r.maladie.split('(')[0].strip()
+        if root not in clusters:
+            clusters[root] = r
+            cluster_variants[root] = []
+        else:
+            cluster_variants[root].append(
+                VarianteResult(maladie=r.maladie, score=r.score, urgence=r.urgence)
+            )
+
+    # Keep only top 4 roots (dict preserves insertion = score-descending order)
+    top4_roots = list(clusters.keys())[:4]
+
+    final: List[DiagnosticResult] = []
+    for root in top4_roots:
+        winner = clusters[root]
+        variants = cluster_variants[root]
+        if variants:
+            final.append(DiagnosticResult(
+                maladie=winner.maladie,
+                score=winner.score,
+                urgence=winner.urgence,
+                compatibilite_age=winner.compatibilite_age,
+                compatibilite_sexe=winner.compatibilite_sexe,
+                examens_recommandes=winner.examens_recommandes,
+                arguments=winner.arguments,
+                variantes=variants,
+            ))
+        else:
+            final.append(winner)
+
+    return final
 
 
 class DiagnosticService:
@@ -21,6 +72,7 @@ class DiagnosticService:
         self.matching_engine = get_matching_engine()
         self.scoring_service = get_scoring_service()
         self.recommendation_service = get_recommendation_service()
+        self.clinical_scoring = get_clinical_scoring_manager()
     
     def perform_diagnostic(
         self,
@@ -65,6 +117,10 @@ class DiagnosticService:
             # Step 2: Calculate detailed scores and build results
             diagnostic_results = []
             
+            # Normalize request analyses for matching
+            request_analyses = request.analyses or {}
+            request_anomalies = request.analyses_anomalies or []
+
             for disease in matched_diseases:
                 # Calculate age compatibility
                 age_compatible, age_score = self.matching_engine.calculate_age_compatibility(
@@ -80,14 +136,47 @@ class DiagnosticService:
                     disease['sex_predominant']
                 )
                 
+                # Calculate analyses match score if analyses provided
+                analyses_match_score = 0.0
+                if request_analyses:
+                    analyses_match_score = self.scoring_service.calculate_analyses_match_score(
+                        provided_analyses=request_analyses,
+                        expected_analyses=disease.get('analyses', []),
+                        expected_results=disease.get('expected_results', []),
+                        analyses_anomalies=request_anomalies,
+                    )
+                    logger.info(f"Analyses match score for {disease['disease_name']}: {analyses_match_score}")
+                
                 # Calculate final score
                 final_score = self.scoring_service.calculate_final_score(
                     symptom_score=disease['score'],
                     age_compatibility=age_score,
                     sex_compatibility=sex_score,
-                    analyses_match=0.0  # TODO: Implement if analyses provided
+                    analyses_match=analyses_match_score
                 )
-                
+
+                # Exclusionary logic: key mandatory symptom absent → heavy malus
+                if disease.get('key_symptom_absent', False):
+                    logger.info(
+                        f"Exclusionary malus for '{disease['disease_name']}': "
+                        f"key symptom absent. Score {final_score} → {round(final_score * 0.1, 2)}"
+                    )
+                    final_score = round(final_score * 0.1, 2)
+
+                # ScoreCliniqueManager: validated clinical score boost
+                clinical_boost = self.clinical_scoring.compute_boost(
+                    disease_name=disease['disease_name'],
+                    symptoms=request.symptomes,
+                    age=request.age,
+                )
+                if clinical_boost > 0:
+                    old = final_score
+                    final_score = min(100.0, round(final_score + clinical_boost, 2))
+                    logger.info(
+                        f"Clinical score boost for '{disease['disease_name']}': "
+                        f"+{clinical_boost} → {old} → {final_score}"
+                    )
+
                 # Determine urgency level
                 urgency = self.scoring_service.calculate_urgency_level(
                     disease['disease_name'],
@@ -119,7 +208,33 @@ class DiagnosticService:
             
             # Step 3: Sort by final score
             diagnostic_results.sort(key=lambda x: x.score, reverse=True)
-            
+
+            # Step 3a: Anti-anchoring — deduplicate top 4 by disease root
+            diagnostic_results = _apply_anti_anchoring(diagnostic_results)
+
+            # Step 3b: Minimum confidence threshold
+            MIN_SCORE = 1.0
+            if diagnostic_results and diagnostic_results[0].score < MIN_SCORE:
+                logger.warning(
+                    f"Low confidence diagnostic: top score={diagnostic_results[0].score:.1f} < {MIN_SCORE}"
+                )
+                return DiagnosticResponse(
+                    success=True,
+                    message=(
+                        "Les symptômes fournis sont insuffisants pour établir un diagnostic fiable. "
+                        "Veuillez préciser ou ajouter d'autres symptômes."
+                    ),
+                    diagnostics=[],
+                    patient_info={
+                        "age": request.age,
+                        "sexe": request.sexe,
+                        "symptomes": request.symptomes,
+                        "nombre_symptomes": len(request.symptomes),
+                        "low_confidence": True,
+                    },
+                    timestamp=datetime.now()
+                )
+
             # Step 4: Build response
             response = DiagnosticResponse(
                 success=True,

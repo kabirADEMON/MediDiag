@@ -10,7 +10,7 @@ import time
 
 from app.config import settings
 from app.routes import diagnostic, maladies, patients, auth, metadata, consultations
-from app.routes import diagnostics_history
+from app.routes import diagnostics_history, vitals, feedback
 from app.services.preprocessing_service import get_dataset_loader
 
 # Configure logging
@@ -142,6 +142,8 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(metadata.router, prefix="/api/v1")
 app.include_router(consultations.router, prefix="/api/v1")
 app.include_router(diagnostics_history.router, prefix="/api/v1")
+app.include_router(vitals.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
 
 
 # Root endpoint

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\" /b)",
+      "Bash(findstr -i \"draw\\\\|class\\\\|diagram\")",
+      "Bash(python *)",
+      "Bash(xargs grep -l -i \"diagnostic\\\\|analyse\")"
+    ]
+  }
+}

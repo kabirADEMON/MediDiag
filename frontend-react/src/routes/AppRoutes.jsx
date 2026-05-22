@@ -1,23 +1,17 @@
-/**
- * Application Routes
- * Centralized routing configuration
- */
-
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { AuthLayout } from '@/layouts/AuthLayout'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 
-// Pages
-import Login from '@/pages/Login'
+// Features — public API via index.js
+import { AuthLayout, Login } from '@/features/auth'
+import { Patients, PatientNew, PatientDetails } from '@/features/patients'
+import { Consultation, NurseSuivi } from '@/features/consultation'
+import { Diagnostics, Statistics } from '@/features/clinical-engine'
+
+// Shared pages (not feature-owned)
 import Dashboard from '@/pages/Dashboard'
-import Patients from '@/pages/Patients'
-import PatientNew from '@/pages/PatientNew'
-import PatientDetails from '@/pages/PatientDetails'
-import Consultation from '@/pages/Consultation'
-import Diagnostics from '@/pages/Diagnostics'
-import Statistics from '@/pages/Statistics'
 import Settings from '@/pages/Settings'
+import AdminUsers from '@/pages/AdminUsers'
 
 export function AppRoutes() {
   return (
@@ -27,7 +21,7 @@ export function AppRoutes() {
         <Route path="/login" element={<Login />} />
       </Route>
 
-      {/* Protected routes */}
+      {/* Protected routes - all authenticated users */}
       <Route
         element={
           <ProtectedRoute>
@@ -36,13 +30,39 @@ export function AppRoutes() {
         }
       >
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/patients" element={<Patients />} />
-        <Route path="/patients/new" element={<PatientNew />} />
-        <Route path="/patients/:id" element={<PatientDetails />} />
-        <Route path="/consultation" element={<Consultation />} />
-        <Route path="/diagnostics" element={<Diagnostics />} />
-        <Route path="/statistics" element={<Statistics />} />
         <Route path="/settings" element={<Settings />} />
+
+        {/* Medecin + Infirmier only */}
+        <Route path="/patients" element={
+          <ProtectedRoute requiredPermission="patients"><Patients /></ProtectedRoute>
+        } />
+        <Route path="/patients/new" element={
+          <ProtectedRoute requiredRole="infirmier"><PatientNew /></ProtectedRoute>
+        } />
+        <Route path="/patients/:id" element={
+          <ProtectedRoute requiredPermission="patients"><PatientDetails /></ProtectedRoute>
+        } />
+
+        {/* Medecin only */}
+        <Route path="/consultation" element={
+          <ProtectedRoute requiredPermission="diagnose"><Consultation /></ProtectedRoute>
+        } />
+        <Route path="/diagnostics" element={
+          <ProtectedRoute requiredPermission="diagnose"><Diagnostics /></ProtectedRoute>
+        } />
+        <Route path="/statistics" element={
+          <ProtectedRoute requiredPermission="diagnose"><Statistics /></ProtectedRoute>
+        } />
+
+        {/* Nurse routes */}
+        <Route path="/nurse/suivi" element={
+          <ProtectedRoute requiredRole="infirmier"><NurseSuivi /></ProtectedRoute>
+        } />
+
+        {/* Admin only */}
+        <Route path="/admin/users" element={
+          <ProtectedRoute requiredRole="administrateur"><AdminUsers /></ProtectedRoute>
+        } />
       </Route>
 
       {/* Redirects */}

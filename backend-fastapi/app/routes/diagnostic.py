@@ -1,7 +1,8 @@
 """
 Diagnostic routes - Main diagnostic endpoints
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List
 import logging
 
@@ -14,6 +15,9 @@ from app.models.response_models import (
 from app.services.diagnostic_service import get_diagnostic_service
 from app.services.hybrid_diagnostic_service import get_hybrid_diagnostic_service
 from app.services.preprocessing_service import get_dataset_loader
+from app.utils.auth_helper import require_role
+
+security = HTTPBearer(auto_error=False)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ router = APIRouter(prefix="/diagnostic", tags=["Diagnostic"])
 
 
 @router.post("/", response_model=DiagnosticResponse)
-async def perform_diagnostic(request: DiagnosticRequest):
+async def perform_diagnostic(request: DiagnosticRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Perform medical diagnostic based on patient symptoms (with ML)
     
@@ -37,10 +41,14 @@ async def perform_diagnostic(request: DiagnosticRequest):
     - Recommended examinations
     """
     try:
+        # Only medecin and administrateur can perform diagnostic (clinical act)
+        require_role(credentials, ['medecin', 'administrateur'])
         # Use hybrid service with ML
         hybrid_service = get_hybrid_diagnostic_service()
         result = hybrid_service.perform_diagnostic(request, top_n=10, use_ml=True)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in diagnostic endpoint: {e}", exc_info=True)
         raise HTTPException(
@@ -50,16 +58,19 @@ async def perform_diagnostic(request: DiagnosticRequest):
 
 
 @router.post("/quick", response_model=DiagnosticResponse)
-async def quick_diagnostic(request: DiagnosticRequest):
+async def quick_diagnostic(request: DiagnosticRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Quick diagnostic - Returns top 5 results only
-    
+
     Faster response for preliminary assessment
     """
     try:
+        require_role(credentials, ['medecin', 'administrateur'])
         diagnostic_service = get_diagnostic_service()
         result = diagnostic_service.perform_diagnostic(request, top_n=5)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in quick diagnostic: {e}", exc_info=True)
         raise HTTPException(
@@ -69,40 +80,36 @@ async def quick_diagnostic(request: DiagnosticRequest):
 
 
 @router.post("/summary")
-async def get_diagnostic_summary(request: DiagnosticRequest):
+async def get_diagnostic_summary(request: DiagnosticRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get diagnostic summary with recommendations
     
     Returns a simplified summary with key information
     """
     try:
+        require_role(credentials, ['medecin', 'administrateur'])
         diagnostic_service = get_diagnostic_service()
         result = diagnostic_service.perform_diagnostic(request, top_n=5)
         summary = diagnostic_service.get_diagnostic_summary(result)
-        
-        return SuccessResponse(
-            success=True,
-            message="Résumé du diagnostic généré",
-            data=summary
-        )
+        return SuccessResponse(success=True, message="Résumé du diagnostic généré", data=summary)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating summary: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de la génération du résumé: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erreur lors de la génération du résumé: {str(e)}")
 
 
 @router.post("/examinations")
-async def get_recommended_examinations(request: DiagnosticRequest):
+async def get_recommended_examinations(request: DiagnosticRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get recommended medical examinations based on symptoms
     
     Returns a consolidated list of recommended analyses from top matching diseases
     """
     try:
-        logger.info(f"🔬 Examinations request: age={request.age}, sexe={request.sexe}, symptoms={len(request.symptomes)}")
-        
+        require_role(credentials, ['medecin', 'administrateur'])
+        logger.info(f"Examinations request: age={request.age}, sexe={request.sexe}, symptoms={len(request.symptomes)}")
+
         # Get top diseases
         hybrid_service = get_hybrid_diagnostic_service()
         result = hybrid_service.perform_diagnostic(request, top_n=10, use_ml=True)
@@ -148,18 +155,19 @@ async def get_recommended_examinations(request: DiagnosticRequest):
         logger.info(f"✅ Found {len(sorted_analyses)} unique analyses")
         
         # Build response with details
+        total_diseases = len(result.diagnostics)
         recommended_analyses = []
         for analysis_name, count in sorted_analyses[:15]:  # Top 15 analyses
             diseases = analyses_by_disease[analysis_name]
+            pct = round(count / total_diseases * 100) if total_diseases > 0 else 0
             recommended_analyses.append({
                 "name": analysis_name,
                 "frequency": count,
                 "recommended_by": len(diseases),
+                "percentage": pct,
                 "diseases": [d["maladie"] for d in diseases[:3]],  # Top 3 diseases
                 "priority": "high" if count >= 5 else "medium" if count >= 3 else "low"
             })
-        
-        logger.info(f"📤 Returning {len(recommended_analyses)} recommended analyses")
         
         return SuccessResponse(
             success=True,
@@ -167,19 +175,14 @@ async def get_recommended_examinations(request: DiagnosticRequest):
             data={
                 "analyses": recommended_analyses,
                 "total_diseases": len(result.diagnostics),
-                "patient_info": {
-                    "age": request.age,
-                    "sexe": request.sexe,
-                    "symptomes": request.symptomes
-                }
+                "patient_info": {"age": request.age, "sexe": request.sexe, "symptomes": request.symptomes}
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting examinations: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de la récupération des examens: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erreur lors de la récupération des examens: {str(e)}")
 
 
 @router.get("/stats")

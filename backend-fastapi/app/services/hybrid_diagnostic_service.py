@@ -10,6 +10,8 @@ from app.models.response_models import DiagnosticResult, DiagnosticResponse
 from app.services.matching_service import get_matching_engine
 from app.services.scoring_service import get_scoring_service
 from app.services.recommendation_service import get_recommendation_service
+from app.services.clinical_scoring_service import get_clinical_scoring_manager
+from app.services.diagnostic_service import _apply_anti_anchoring
 from app.ml.predictor import get_ml_predictor
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ class HybridDiagnosticService:
         self.matching_engine = get_matching_engine()
         self.scoring_service = get_scoring_service()
         self.recommendation_service = get_recommendation_service()
+        self.clinical_scoring = get_clinical_scoring_manager()
         self.ml_predictor = get_ml_predictor()
         
         # Weights for hybrid scoring
@@ -121,20 +124,34 @@ class HybridDiagnosticService:
                     analyses_score = self.scoring_service.calculate_analyses_match_score(
                         request.analyses,
                         disease.get('analyses', []),
-                        disease.get('expected_results', [])
+                        disease.get('expected_results', []),
+                        analyses_anomalies=request.analyses_anomalies or [],
                     )
                     logger.info(f"  📊 {disease['disease_name']}: analyses_score={analyses_score:.1f}%")
                 
-                # Use hybrid score
+                # Use hybrid score as base
                 final_score = disease['hybrid_score']
-                
-                # If analyses provided, adjust the score
+
+                # Analyses boost
                 if request.analyses and analyses_score > 0:
-                    # Boost score based on analyses match
-                    # 70% original score + 30% analyses boost
                     analyses_boost = (analyses_score / 100) * 30
                     final_score = min(100, final_score + analyses_boost)
                     logger.info(f"  ✨ {disease['disease_name']}: boosted to {final_score:.1f}% (analyses match: {analyses_score:.1f}%)")
+
+                # Exclusionary logic: key mandatory symptom absent → moderate malus
+                if disease.get('key_symptom_absent', False):
+                    final_score = round(final_score * 0.5, 2)
+                    logger.info(f"  ✂ Exclusionary malus '{disease['disease_name']}': key symptom absent → {final_score}")
+
+                # ScoreCliniqueManager: validated clinical score boost
+                clinical_boost = self.clinical_scoring.compute_boost(
+                    disease_name=disease['disease_name'],
+                    symptoms=request.symptomes,
+                    age=request.age,
+                )
+                if clinical_boost > 0:
+                    final_score = min(100.0, round(final_score + clinical_boost, 2))
+                    logger.info(f"  ⬆ Clinical boost '{disease['disease_name']}': +{clinical_boost} → {final_score}")
                 
                 # Determine urgency level
                 urgency = self.scoring_service.calculate_urgency_level(
@@ -169,9 +186,35 @@ class HybridDiagnosticService:
                 
                 diagnostic_results.append(result)
             
-            # Step 5: Build response
+            # Step 5: Sort, deduplicate, threshold
+            diagnostic_results.sort(key=lambda x: x.score, reverse=True)
+
+            # Anti-anchoring: max 1 variant per root in top 4, embed duplicates as variantes
+            diagnostic_results = _apply_anti_anchoring(diagnostic_results)
+
+            # Minimum confidence threshold — intentionally low (hybrid ML scores scale 0-100)
+            MIN_SCORE = 1.0
+            if diagnostic_results and diagnostic_results[0].score < MIN_SCORE:
+                logger.warning(f"Low confidence: top score={diagnostic_results[0].score:.1f} < {MIN_SCORE}")
+                return DiagnosticResponse(
+                    success=True,
+                    message=(
+                        "Les symptômes fournis sont insuffisants pour établir un diagnostic fiable. "
+                        "Veuillez préciser ou ajouter d'autres symptômes."
+                    ),
+                    diagnostics=[],
+                    patient_info={
+                        "age": request.age,
+                        "sexe": request.sexe,
+                        "symptomes": request.symptomes,
+                        "low_confidence": True,
+                    },
+                    timestamp=datetime.now()
+                )
+
+            # Step 6: Build response
             ml_status = "activé" if (use_ml and self.ml_predictor.is_loaded) else "désactivé"
-            
+
             response = DiagnosticResponse(
                 success=True,
                 message=f"{len(diagnostic_results)} diagnostic(s) identifié(s) (IA {ml_status})",
@@ -185,7 +228,7 @@ class HybridDiagnosticService:
                 },
                 timestamp=datetime.now()
             )
-            
+
             logger.info(f"Hybrid diagnostic completed: {len(diagnostic_results)} results")
             
             return response
