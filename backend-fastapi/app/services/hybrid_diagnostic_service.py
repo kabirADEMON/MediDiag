@@ -57,12 +57,15 @@ class HybridDiagnosticService:
             logger.info(f"Symptoms: {request.symptomes}")
             logger.info(f"ML enabled: {use_ml}")
             
-            # Step 1: Get fuzzy matching results
+            # Step 1: Get fuzzy matching results — 30 candidates minimum so
+            # anti-anchoring can always surface at least 3 distinct roots
             fuzzy_results = self.matching_engine.match_diseases(
                 age=request.age,
                 sex=request.sexe,
                 symptoms=request.symptomes,
-                top_n=20  # Get more candidates for ML
+                top_n=30,
+                temporalite=request.temporalite,
+                symptomes_absents=request.symptomes_absents,
             )
             
             if not fuzzy_results:
@@ -84,9 +87,9 @@ class HybridDiagnosticService:
                 logger.info("Getting ML predictions with age and sex...")
                 ml_results = self.ml_predictor.predict(
                     symptoms=request.symptomes,
-                    age=request.age,  # Pass age to ML
-                    sex=request.sexe,  # Pass sex to ML
-                    top_n=20,
+                    age=request.age,
+                    sex=request.sexe,
+                    top_n=30,
                     min_probability=0.01
                 )
                 logger.info(f"ML returned {len(ml_results)} predictions")
@@ -245,6 +248,11 @@ class HybridDiagnosticService:
                 }
             )
     
+    @staticmethod
+    def _disease_root(name: str) -> str:
+        """Extract root name — strips variant in parentheses (matches train_model.py)."""
+        return name.split('(')[0].strip()
+
     def _combine_results(
         self,
         fuzzy_results: List[Dict],
@@ -252,20 +260,15 @@ class HybridDiagnosticService:
         request: DiagnosticRequest
     ) -> List[Dict]:
         """
-        Combine fuzzy matching and ML results with weighted scoring
-        
-        Args:
-            fuzzy_results: Results from fuzzy matching
-            ml_results: Results from ML model
-            request: Original request
-            
-        Returns:
-            Combined and sorted results
+        Combine fuzzy matching and ML results with weighted scoring.
+
+        ML now predicts root names ("Pneumonie").  Fuzzy results have variant
+        names ("Pneumonie (Aiguë)").  The merge maps each ML root onto every
+        fuzzy variant that shares the same root so the ML confidence spreads
+        across all variants of the same pathology.
         """
-        # Create a dictionary to merge results by disease name
-        disease_scores = {}
-        
-        # Add fuzzy matching results
+        disease_scores: Dict[str, Dict] = {}
+
         for fuzzy in fuzzy_results:
             disease_name = fuzzy['disease_name']
             disease_scores[disease_name] = {
@@ -273,63 +276,55 @@ class HybridDiagnosticService:
                 'fuzzy_score': fuzzy['score'],
                 'ml_score': 0.0,
                 'has_fuzzy': True,
-                'has_ml': False
+                'has_ml': False,
             }
-        
-        # Add/merge ML results
+
+        # Build root → [variant names] index from fuzzy candidates
+        root_to_variants: Dict[str, List[str]] = {}
+        for dname in disease_scores:
+            root = self._disease_root(dname)
+            root_to_variants.setdefault(root, []).append(dname)
+
+        # Apply ML scores to all fuzzy variants sharing the same root
         for ml in ml_results:
-            disease_name = ml['disease_name']
-            
-            if disease_name in disease_scores:
-                # Disease found in both - merge
-                disease_scores[disease_name]['ml_score'] = ml['ml_score']
-                disease_scores[disease_name]['has_ml'] = True
+            ml_root = ml['disease_name']  # root name from the trained model
+            ml_score = ml['ml_score']
+
+            matching_variants = root_to_variants.get(ml_root, [])
+            if matching_variants:
+                for variant_name in matching_variants:
+                    existing = disease_scores[variant_name]['ml_score']
+                    # Keep the highest ML score if root appears multiple times
+                    if ml_score > existing:
+                        disease_scores[variant_name]['ml_score'] = ml_score
+                        disease_scores[variant_name]['has_ml'] = True
             else:
-                # Disease only in ML - need to get details from dataset
-                disease_info = self.matching_engine.dataset_loader.get_disease_by_name(disease_name)
-                
-                if disease_info:
-                    disease_scores[disease_name] = {
-                        'disease_id': disease_info['N°'],
-                        'disease_name': disease_name,
-                        'fuzzy_score': 0.0,
-                        'ml_score': ml['ml_score'],
-                        'has_fuzzy': False,
-                        'has_ml': True,
-                        'age_min': disease_info['Age_Min'],
-                        'age_max': disease_info['Age_Max'],
-                        'age_typical': disease_info['Age_Typique'],
-                        'sex_predominant': disease_info['Sexe_Predominant'],
-                        'matched_symptoms': [],
-                        'all_disease_symptoms': disease_info.get('all_symptoms', []),
-                        'analyses': disease_info.get('analyses_list', []),
-                        'expected_results': disease_info.get('resultats_list', [])
-                    }
-        
+                # Root not in fuzzy candidates — exact name fallback
+                if ml_root in disease_scores:
+                    disease_scores[ml_root]['ml_score'] = ml_score
+                    disease_scores[ml_root]['has_ml'] = True
+
         # Calculate hybrid scores
-        for disease_name, disease in disease_scores.items():
+        for disease in disease_scores.values():
             fuzzy_score = disease['fuzzy_score']
             ml_score = disease['ml_score']
-            
-            # Weighted combination
+
             if disease['has_ml']:
-                # Use ML weight
                 hybrid_score = (
                     fuzzy_score * self.FUZZY_WEIGHT +
                     ml_score * self.ML_WEIGHT
                 )
             else:
-                # Only fuzzy matching available
                 hybrid_score = fuzzy_score
-            
+
             disease['hybrid_score'] = round(hybrid_score, 2)
-        
-        # Convert to list and sort by hybrid score
+
         combined = list(disease_scores.values())
         combined.sort(key=lambda x: x['hybrid_score'], reverse=True)
-        
-        logger.info(f"Combined {len(combined)} unique diseases")
-        
+
+        ml_hits = sum(1 for d in combined if d['has_ml'])
+        logger.info(f"Combined {len(combined)} diseases, {ml_hits} with ML boost")
+
         return combined
     
     def get_model_status(self) -> Dict:

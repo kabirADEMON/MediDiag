@@ -243,3 +243,43 @@ async def health_check():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Service unavailable: {str(e)}"
         )
+
+
+@router.post("/parse-motif")
+async def parse_motif(
+    data: dict,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Parse free-text consultation reason (motif) and extract structured clinical data.
+
+    **Request Body:**
+    - motif: Free text written by the doctor
+    - sexe: Patient sex (M / F) for coherence checks
+
+    **Returns:**
+    - temporalite: aiguë / chronique / inconnue
+    - localisation: anatomical location if detected
+    - symptomes_extraits: symptoms explicitly mentioned (to suggest adding)
+    - symptomes_absents: symptoms explicitly negated ("sans fièvre", "pas d'écoulement")
+    - filtres_diagnostic: flags for the matching engine (exclure_chroniques, etc.)
+    """
+    try:
+        require_role(credentials, ['medecin', 'administrateur'])
+        from app.services.motif_parser_service import parse_motif_text
+        motif = data.get('motif', '')
+        sexe = data.get('sexe', 'M')
+        result = parse_motif_text(motif, sexe)
+        return SuccessResponse(
+            success=True,
+            message="Motif analysé",
+            data=result
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error parsing motif: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur lors de l'analyse du motif: {str(e)}"
+        )

@@ -1,394 +1,301 @@
 """
-Machine Learning Model Training
-Train a Random Forest classifier for disease prediction
-Includes: Symptoms + Analyses + Results + Age + Sex
+ML Model Training — Random Forest sur les maladies racines (106 classes).
+
+Améliorations vs version précédente :
+- Entraîne sur la maladie RACINE (106 classes) et non les variantes (601 classes)
+  → chaque classe passe de ~25 à ~140 exemples d'entraînement
+- Génération d'âge uniforme entre Age_Min et Age_Max (plus de biais Age_Typique)
+- Ajout de features d'âge normalisé + tranche d'âge (enfant/adulte/senior)
+- Hyperparamètres Random Forest adaptés à 106 classes (200 arbres, min_leaf=2)
+- 30 cas synthétiques par ligne dataset (au lieu de 15)
 """
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score
 import joblib
 import logging
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 import json
 from scipy.sparse import hstack, csr_matrix
 
 logger = logging.getLogger(__name__)
 
+DATASET_PATH = Path(__file__).parent.parent / 'datasets' / '1000_Maladies_Complet_Age_Sexe.csv'
+
+
+def _extract_root(name: str) -> str:
+    """Extrait la maladie racine en supprimant la variante entre parenthèses."""
+    return name.split('(')[0].strip()
+
 
 class DiseaseMLModel:
-    """Machine Learning model for disease prediction with ALL features"""
-    
+    """Random Forest entraîné sur les maladies racines (106 classes)."""
+
     def __init__(self):
-        # TF-IDF for text features (symptoms + analyses + results) - OPTIMIZED
         self.vectorizer = TfidfVectorizer(
-            max_features=300,  # Reduced from 800 (smaller model)
-            ngram_range=(1, 1),  # Only unigrams (no bigrams for speed)
+            max_features=500,
+            ngram_range=(1, 2),   # Bigrams pour capturer "douleur thoracique", "fièvre persistante"
             min_df=2,
-            max_df=0.85,
+            max_df=0.90,
             sublinear_tf=True,
-            norm='l2'
+            norm='l2',
+            analyzer='word',
         )
-        
-        # Scaler for numerical features (age)
         self.scaler = StandardScaler()
-        
-        # Random Forest classifier (optimized for size and speed)
         self.classifier = RandomForestClassifier(
-            n_estimators=50,  # Reduced from 250 (5x smaller)
-            max_depth=15,  # Reduced from 35 (smaller trees)
-            min_samples_split=10,  # Increased from 3 (simpler trees)
-            min_samples_leaf=5,  # Increased from 1 (simpler trees)
+            n_estimators=200,        # 4× plus qu'avant — nécessaire pour 106 classes
+            max_depth=25,            # Arbres plus profonds car moins de classes
+            min_samples_split=5,
+            min_samples_leaf=2,      # 2 au lieu de 5 — données plus nombreuses par classe
             max_features='sqrt',
             bootstrap=True,
             oob_score=True,
             random_state=42,
             n_jobs=-1,
-            class_weight='balanced',
-            warm_start=False
+            class_weight='balanced', # Compense les classes sous-représentées
         )
-        
         self.label_encoder = LabelEncoder()
         self.model_dir = Path(__file__).parent / 'models'
         self.model_dir.mkdir(exist_ok=True)
-    
+
+    # ── Chargement du dataset ──────────────────────────────────────────────────
+
     def load_dataset(self, csv_path: str) -> pd.DataFrame:
-        """Load and preprocess the disease dataset"""
-        logger.info(f"Loading dataset from {csv_path}")
-        df = pd.read_csv(csv_path, encoding='utf-8')
-        
-        # Combine all symptoms into one text field
-        symptom_cols = [f'Symptôme_{i}' for i in range(1, 10)]
-        df['all_symptoms_text'] = df[symptom_cols].fillna('').agg(' '.join, axis=1)
-        
-        # Add analyses and results to the text (important for ML!)
-        df['analyses_text'] = df['Analyses_biologiques_et_examens'].fillna('')
-        df['results_text'] = df['Résultats_attendus'].fillna('')
-        
-        # Combine symptoms + analyses + results for richer features
-        df['full_text'] = (
-            df['all_symptoms_text'] + ' ' + 
-            df['analyses_text'] + ' ' + 
-            df['results_text']
-        )
-        
-        # Clean text
-        df['all_symptoms_text'] = df['all_symptoms_text'].str.lower().str.strip()
-        df['full_text'] = df['full_text'].str.lower().str.strip()
-        
-        logger.info(f"Loaded {len(df)} diseases with symptoms, analyses, and results")
+        df = pd.read_csv(csv_path, encoding='utf-8-sig', sep=None, engine='python')
+
+        # Colonne racine (sans variante)
+        df['Maladie_Racine'] = df['Maladie'].apply(_extract_root)
+
+        # Texte complet = tous les symptômes + analyses + résultats
+        sym_cols = [c for c in df.columns if 'ympt' in c]
+        df['symptomes_text'] = df[sym_cols].fillna('').agg(' '.join, axis=1).str.lower().str.strip()
+        df['analyses_text'] = df['Analyses_biologiques_et_examens'].fillna('').str.lower()
+        df['resultats_text'] = df['Résultats_attendus'].fillna('').str.lower()
+        df['full_text'] = df['symptomes_text'] + ' ' + df['analyses_text'] + ' ' + df['resultats_text']
+
+        n_roots = df['Maladie_Racine'].nunique()
+        n_variants = df['Maladie'].nunique()
+        logger.info(f"Dataset chargé : {len(df)} lignes, {n_variants} variantes, {n_roots} racines")
         return df
-    
+
+    # ── Génération de cas synthétiques ────────────────────────────────────────
+
     def generate_synthetic_cases(
         self,
         df: pd.DataFrame,
-        cases_per_disease: int = 15
-    ) -> Tuple[list, list, list, list]:
+        cases_per_row: int = 30,
+    ) -> Tuple[List[str], List[List[float]], List[str]]:
         """
-        Generate synthetic training cases with ALL features:
-        - Symptoms (text)
-        - Analyses (text)
-        - Results (text)
-        - Age (numerical)
-        - Sex (categorical: M/F)
+        Génère cases_per_row exemples par ligne du dataset.
+        Target = Maladie_Racine (106 classes).
+        Features = texte TF-IDF + [age_scaled, age_group_0..3, is_child, is_senior, sex_M]
         """
-        logger.info(f"Generating {cases_per_disease} synthetic cases per disease")
-        
-        X_texts = []
-        X_ages = []
-        X_sexes = []
-        y_labels = []
-        
-        for idx, row in df.iterrows():
-            disease_name = row['Maladie']
-            
-            # Get symptoms
-            symptom_cols = [f'Symptôme_{i}' for i in range(1, 10)]
+        X_texts: List[str] = []
+        X_nums: List[List[float]] = []
+        y_labels: List[str] = []
+
+        sym_cols = [c for c in df.columns if 'ympt' in c]
+
+        for _, row in df.iterrows():
             symptoms = [
-                str(row[col]).lower().strip()
-                for col in symptom_cols
-                if pd.notna(row[col]) and str(row[col]).strip()
+                str(row[c]).lower().strip()
+                for c in sym_cols
+                if pd.notna(row[c]) and str(row[c]).strip()
             ]
-            
             if len(symptoms) < 2:
                 continue
-            
-            # Get age range
+
+            analyses = str(row['Analyses_biologiques_et_examens']).lower() if pd.notna(row['Analyses_biologiques_et_examens']) else ''
+            resultats = str(row['Résultats_attendus']).lower() if pd.notna(row['Résultats_attendus']) else ''
+
             age_min = int(row['Age_Min']) if pd.notna(row['Age_Min']) else 0
             age_max = int(row['Age_Max']) if pd.notna(row['Age_Max']) else 100
-            age_typical = int(row['Age_Typique']) if pd.notna(row['Age_Typique']) else (age_min + age_max) // 2
-            
-            # Get sex
-            sex_predominant = row['Sexe_Predominant']
-            
-            # Get analyses and results
-            analyses = str(row['Analyses_biologiques_et_examens']).lower() if pd.notna(row['Analyses_biologiques_et_examens']) else ''
-            results = str(row['Résultats_attendus']).lower() if pd.notna(row['Résultats_attendus']) else ''
-            
-            # Generate variations
-            for i in range(cases_per_disease):
-                # Select symptoms (weighted selection)
-                if i < cases_per_disease // 2:
-                    n_symptoms = np.random.randint(3, min(len(symptoms) + 1, 8))
-                    selected_symptoms = np.random.choice(symptoms, size=n_symptoms, replace=False)
+            age_typ = int(row['Age_Typique']) if pd.notna(row['Age_Typique']) else (age_min + age_max) // 2
+            sex_pred = row['Sexe_Predominant']
+            racine = row['Maladie_Racine']
+
+            for i in range(cases_per_row):
+                # ── Sélection des symptômes ────────────────────────────────
+                # 50% : symptômes précoces (indices bas = plus caractéristiques)
+                # 50% : sélection pondérée par rang
+                if i < cases_per_row // 2:
+                    n = np.random.randint(3, min(len(symptoms) + 1, 8))
+                    selected = np.random.choice(symptoms, size=n, replace=False).tolist()
                 else:
-                    weights = [1.0 / (i + 1) for i in range(len(symptoms))]
-                    weights = np.array(weights) / sum(weights)
-                    n_symptoms = np.random.randint(3, min(len(symptoms) + 1, 8))
-                    selected_symptoms = np.random.choice(
-                        symptoms, 
-                        size=min(n_symptoms, len(symptoms)), 
-                        replace=False, 
-                        p=weights
-                    )
-                
-                # Combine text: symptoms + analyses + results
-                text_features = ' '.join(selected_symptoms)
+                    weights = np.array([1.0 / (j + 1) for j in range(len(symptoms))])
+                    weights /= weights.sum()
+                    n = np.random.randint(3, min(len(symptoms) + 1, 8))
+                    selected = np.random.choice(symptoms, size=n, replace=False, p=weights).tolist()
+
+                text = ' '.join(selected)
                 if analyses:
-                    text_features += ' ' + analyses
-                if results:
-                    text_features += ' ' + results
-                
-                # Generate age (around typical age with variation)
-                age_std = (age_max - age_min) / 4
-                generated_age = int(np.random.normal(age_typical, age_std))
-                generated_age = np.clip(generated_age, age_min, age_max)
-                
-                # Generate sex
-                if sex_predominant == 'Both':
-                    generated_sex = np.random.choice(['M', 'F'])
-                elif sex_predominant in ['M', 'F']:
-                    # 80% predominant sex, 20% other
-                    if np.random.random() < 0.8:
-                        generated_sex = sex_predominant
-                    else:
-                        generated_sex = 'F' if sex_predominant == 'M' else 'M'
+                    text += ' ' + analyses
+                if resultats:
+                    text += ' ' + resultats
+
+                # ── Génération de l'âge ────────────────────────────────────
+                # Mix uniforme (60%) + centré sur Age_Typique (40%)
+                # Élimine le biais Age_Typique 45-81 pour les jeunes patients
+                if np.random.random() < 0.6:
+                    age = int(np.random.uniform(age_min, age_max + 1))
                 else:
-                    generated_sex = np.random.choice(['M', 'F'])
-                
-                X_texts.append(text_features)
-                X_ages.append(generated_age)
-                X_sexes.append(generated_sex)
-                y_labels.append(disease_name)
-        
-        logger.info(f"Generated {len(X_texts)} training cases with symptoms, analyses, results, age, and sex")
-        return X_texts, X_ages, X_sexes, y_labels
-    
+                    std = max((age_max - age_min) / 4, 1)
+                    age = int(np.clip(np.random.normal(age_typ, std), age_min, age_max))
+
+                # ── Features numériques enrichies ──────────────────────────
+                age_norm = (age - age_min) / max(age_max - age_min, 1)  # 0..1 dans la plage
+
+                # Tranche d'âge (one-hot style)
+                is_child  = 1 if age < 18 else 0
+                is_young  = 1 if 18 <= age < 40 else 0
+                is_middle = 1 if 40 <= age < 65 else 0
+                is_senior = 1 if age >= 65 else 0
+
+                # Sexe
+                if sex_pred == 'Both':
+                    sex = np.random.choice(['M', 'F'])
+                elif sex_pred in ('M', 'F'):
+                    sex = sex_pred if np.random.random() < 0.8 else ('F' if sex_pred == 'M' else 'M')
+                else:
+                    sex = np.random.choice(['M', 'F'])
+                sex_enc = 0 if sex == 'M' else 1
+
+                nums = [age_norm, is_child, is_young, is_middle, is_senior, sex_enc]
+
+                X_texts.append(text)
+                X_nums.append(nums)
+                y_labels.append(racine)
+
+        logger.info(f"Cas générés : {len(X_texts)} pour {df['Maladie_Racine'].nunique()} racines")
+        return X_texts, X_nums, y_labels
+
+    # ── Entraînement ──────────────────────────────────────────────────────────
+
     def train(self, csv_path: str) -> Dict:
-        """
-        Train the ML model with ALL features
-        
-        Returns:
-            Dictionary with training metrics
-        """
-        logger.info("Starting model training with symptoms, analyses, results, age, and sex...")
-        
-        # Load dataset
         df = self.load_dataset(csv_path)
-        
-        # Generate synthetic training data - 15 cases per disease (good balance)
-        X_texts, X_ages, X_sexes, y_labels = self.generate_synthetic_cases(df, cases_per_disease=15)
-        
-        # Encode labels
+        X_texts, X_nums, y_labels = self.generate_synthetic_cases(df, cases_per_row=30)
+
+        # Encodage des labels (racines)
         y_encoded = self.label_encoder.fit_transform(y_labels)
-        
-        # Vectorize text features
-        logger.info("Vectorizing text features (symptoms + analyses + results) with TF-IDF...")
-        X_text_vectors = self.vectorizer.fit_transform(X_texts)
-        
-        # Encode sex (M=0, F=1)
-        X_sex_encoded = np.array([0 if sex == 'M' else 1 for sex in X_sexes]).reshape(-1, 1)
-        
-        # Scale age
-        X_age_scaled = self.scaler.fit_transform(np.array(X_ages).reshape(-1, 1))
-        
-        # Combine all features: text + age + sex
-        logger.info("Combining text, age, and sex features...")
-        X_combined = hstack([
-            X_text_vectors,  # TF-IDF features (sparse)
-            csr_matrix(X_age_scaled),  # Age (scaled)
-            csr_matrix(X_sex_encoded)  # Sex (encoded)
-        ])
-        
-        logger.info(f"Total features: {X_combined.shape[1]} (text: {X_text_vectors.shape[1]}, age: 1, sex: 1)")
-        
-        # Split data
+        n_classes = len(self.label_encoder.classes_)
+        logger.info(f"Classes cibles : {n_classes} racines")
+
+        # TF-IDF sur les textes de symptômes
+        logger.info("Vectorisation TF-IDF (symptoms + analyses)...")
+        X_tfidf = self.vectorizer.fit_transform(X_texts)
+
+        # Normalisation des features numériques
+        X_num_arr = np.array(X_nums)
+        # Fit scaler sur les 2 premières colonnes quantitatives (age_norm + sexe)
+        # Les colonnes binaires (tranches) n'ont pas besoin de scaling
+        self.scaler.fit(X_num_arr[:, :1])  # Uniquement age_norm
+        X_num_arr[:, 0] = self.scaler.transform(X_num_arr[:, :1]).flatten()
+
+        X_combined = hstack([X_tfidf, csr_matrix(X_num_arr)])
+        logger.info(f"Features totales : {X_combined.shape[1]} "
+                    f"(TF-IDF: {X_tfidf.shape[1]}, numériques: {X_num_arr.shape[1]})")
+
+        # Split stratifié
         X_train, X_test, y_train, y_test = train_test_split(
             X_combined, y_encoded,
             test_size=0.2,
             random_state=42,
-            stratify=y_encoded
+            stratify=y_encoded,
         )
-        
-        logger.info(f"Training set: {X_train.shape[0]} samples")
-        logger.info(f"Test set: {X_test.shape[0]} samples")
-        
-        # Train model
-        logger.info("Training Random Forest classifier...")
+        logger.info(f"Train : {X_train.shape[0]} | Test : {X_test.shape[0]}")
+
+        # Entraînement
+        logger.info("Entraînement du Random Forest...")
         self.classifier.fit(X_train, y_train)
-        
-        # Log OOB score if available
-        if hasattr(self.classifier, 'oob_score_'):
-            logger.info(f"Out-of-bag score: {self.classifier.oob_score_:.2%}")
-        
-        # Evaluate
-        logger.info("Evaluating model...")
+
+        oob = getattr(self.classifier, 'oob_score_', None)
+        if oob:
+            logger.info(f"OOB score : {oob:.2%}")
+
+        # Évaluation
         y_pred = self.classifier.predict(X_test)
-        
         accuracy = accuracy_score(y_test, y_pred)
-        
-        # Top-3 accuracy
+
         y_proba = self.classifier.predict_proba(X_test)
-        top3_indices = np.argsort(y_proba, axis=1)[:, -3:]
-        top3_accuracy = np.mean([
-            y_test[i] in top3_indices[i]
-            for i in range(len(y_test))
-        ])
-        
-        # Top-5 accuracy
-        top5_indices = np.argsort(y_proba, axis=1)[:, -5:]
-        top5_accuracy = np.mean([
-            y_test[i] in top5_indices[i]
-            for i in range(len(y_test))
-        ])
-        
-        # Cross-validation
-        logger.info("Running cross-validation...")
-        cv_scores = cross_val_score(
-            self.classifier, X_train, y_train,
-            cv=5, scoring='accuracy'
-        )
-        
+        top3 = np.mean([y_test[i] in np.argsort(y_proba[i])[-3:] for i in range(len(y_test))])
+        top5 = np.mean([y_test[i] in np.argsort(y_proba[i])[-5:] for i in range(len(y_test))])
+
+        # Cross-validation (5-fold)
+        logger.info("Cross-validation 5-fold...")
+        cv = cross_val_score(self.classifier, X_train, y_train, cv=5, scoring='accuracy', n_jobs=-1)
+
         metrics = {
             'accuracy': float(accuracy),
-            'top3_accuracy': float(top3_accuracy),
-            'top5_accuracy': float(top5_accuracy),
-            'cv_mean': float(cv_scores.mean()),
-            'cv_std': float(cv_scores.std()),
-            'oob_score': float(self.classifier.oob_score_) if hasattr(self.classifier, 'oob_score_') else None,
-            'n_diseases': len(self.label_encoder.classes_),
+            'top3_accuracy': float(top3),
+            'top5_accuracy': float(top5),
+            'oob_score': float(oob) if oob else None,
+            'cv_mean': float(cv.mean()),
+            'cv_std': float(cv.std()),
+            'n_root_classes': n_classes,
             'n_training_samples': len(X_texts),
-            'n_text_features': X_text_vectors.shape[1],
-            'n_total_features': X_combined.shape[1],
-            'includes_age': True,
-            'includes_sex': True,
-            'includes_analyses': True,
-            'includes_results': True
+            'n_tfidf_features': int(X_tfidf.shape[1]),
+            'n_numeric_features': X_num_arr.shape[1],
+            'training_mode': 'root_diseases',
         }
-        
-        logger.info(f"Training complete!")
-        logger.info(f"Accuracy: {accuracy:.2%}")
-        logger.info(f"Top-3 Accuracy: {top3_accuracy:.2%}")
-        logger.info(f"Top-5 Accuracy: {top5_accuracy:.2%}")
-        logger.info(f"CV Score: {cv_scores.mean():.2%} (+/- {cv_scores.std():.2%})")
-        
-        return metrics
-    
-    def save_model(self):
-        """Save trained model and all components"""
-        logger.info(f"Saving model to {self.model_dir}")
-        
-        joblib.dump(self.classifier, self.model_dir / 'random_forest.pkl')
-        joblib.dump(self.vectorizer, self.model_dir / 'tfidf_vectorizer.pkl')
-        joblib.dump(self.label_encoder, self.model_dir / 'label_encoder.pkl')
-        joblib.dump(self.scaler, self.model_dir / 'age_scaler.pkl')  # Save age scaler
-        
-        logger.info("Model saved successfully")
-    
-    def load_model(self):
-        """Load trained model and all components"""
-        logger.info(f"Loading model from {self.model_dir}")
-        
-        self.classifier = joblib.load(self.model_dir / 'random_forest.pkl')
-        self.vectorizer = joblib.load(self.model_dir / 'tfidf_vectorizer.pkl')
-        self.label_encoder = joblib.load(self.model_dir / 'label_encoder.pkl')
-        self.scaler = joblib.load(self.model_dir / 'age_scaler.pkl')  # Load age scaler
-        
-        logger.info("Model loaded successfully")
-    
-    def predict(self, symptoms: list, top_n: int = 10) -> list:
-        """
-        Predict diseases from symptoms
-        
-        Args:
-            symptoms: List of symptom strings
-            top_n: Number of top predictions to return
-            
-        Returns:
-            List of (disease_name, probability) tuples
-        """
-        # Combine symptoms into text
-        symptom_text = ' '.join([s.lower().strip() for s in symptoms])
-        
-        # Vectorize
-        X = self.vectorizer.transform([symptom_text])
-        
-        # Predict probabilities
-        probabilities = self.classifier.predict_proba(X)[0]
-        
-        # Get top N predictions
-        top_indices = np.argsort(probabilities)[-top_n:][::-1]
-        
-        results = []
-        for idx in top_indices:
-            disease_name = self.label_encoder.inverse_transform([idx])[0]
-            probability = probabilities[idx]
-            
-            if probability > 0.01:  # Only include if > 1% probability
-                results.append({
-                    'disease_name': disease_name,
-                    'probability': float(probability),
-                    'ml_score': float(probability * 100)
-                })
-        
-        return results
 
+        logger.info(f"Accuracy     : {accuracy:.2%}")
+        logger.info(f"Top-3        : {top3:.2%}")
+        logger.info(f"Top-5        : {top5:.2%}")
+        logger.info(f"CV           : {cv.mean():.2%} ± {cv.std():.2%}")
+
+        return metrics
+
+    # ── Sauvegarde / chargement ────────────────────────────────────────────────
+
+    def save_model(self):
+        joblib.dump(self.classifier,    self.model_dir / 'random_forest.pkl')
+        joblib.dump(self.vectorizer,    self.model_dir / 'tfidf_vectorizer.pkl')
+        joblib.dump(self.label_encoder, self.model_dir / 'label_encoder.pkl')
+        joblib.dump(self.scaler,        self.model_dir / 'age_scaler.pkl')
+        logger.info(f"Modèle sauvegardé dans {self.model_dir}")
+
+    def load_model(self):
+        self.classifier    = joblib.load(self.model_dir / 'random_forest.pkl')
+        self.vectorizer    = joblib.load(self.model_dir / 'tfidf_vectorizer.pkl')
+        self.label_encoder = joblib.load(self.model_dir / 'label_encoder.pkl')
+        self.scaler        = joblib.load(self.model_dir / 'age_scaler.pkl')
+        logger.info("Modèle chargé")
+
+
+# ── Point d'entrée ─────────────────────────────────────────────────────────────
 
 def train_and_save_model(csv_path: str) -> Dict:
-    """
-    Train and save the ML model
-    
-    Args:
-        csv_path: Path to the disease dataset CSV
-        
-    Returns:
-        Training metrics
-    """
     model = DiseaseMLModel()
     metrics = model.train(csv_path)
     model.save_model()
-    
-    # Save metrics
+
     model_dir = Path(__file__).parent / 'models'
     with open(model_dir / 'training_metrics.json', 'w', encoding='utf-8') as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False)
-    
+
     return metrics
 
 
 if __name__ == '__main__':
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s %(levelname)s %(message)s'
     )
-    
-    # Train model
-    csv_path = '../datasets/1000_Maladies_Complet_Age_Sexe.csv'
-    metrics = train_and_save_model(csv_path)
-    
-    print("\n" + "="*50)
-    print("TRAINING COMPLETE!")
-    print("="*50)
-    print(f"Accuracy: {metrics['accuracy']:.2%}")
-    print(f"Top-3 Accuracy: {metrics['top3_accuracy']:.2%}")
-    print(f"Top-5 Accuracy: {metrics['top5_accuracy']:.2%}")
-    print(f"Number of diseases: {metrics['n_diseases']}")
-    print(f"Training samples: {metrics['n_training_samples']}")
-    print("="*50)
+    csv = str(DATASET_PATH)
+    metrics = train_and_save_model(csv)
+
+    print('\n' + '='*55)
+    print('  ENTRAÎNEMENT TERMINÉ')
+    print('='*55)
+    print(f"  Accuracy        : {metrics['accuracy']:.2%}")
+    print(f"  Top-3 Accuracy  : {metrics['top3_accuracy']:.2%}")
+    print(f"  Top-5 Accuracy  : {metrics['top5_accuracy']:.2%}")
+    print(f"  CV              : {metrics['cv_mean']:.2%} ± {metrics['cv_std']:.2%}")
+    print(f"  Classes cibles  : {metrics['n_root_classes']} racines")
+    print(f"  Échantillons    : {metrics['n_training_samples']}")
+    print('='*55)

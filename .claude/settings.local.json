@@ -96,7 +96,10 @@
       "Bash(tasklist *)",
       "Bash(node -e \"const pkg = require\\('./package.json'\\); console.log\\('Name:', pkg.name\\); console.log\\('React:', pkg.dependencies?.react\\); console.log\\('Vite:', pkg.devDependencies?.vite\\); console.log\\('Scripts:', Object.keys\\(pkg.scripts\\).join\\(', '\\)\\)\")",
       "Bash(Test-Path \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\frontend-react\\\\node_modules\")",
-      "Bash(Test-Path \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\\\\data\\\\medical.db\")"
+      "Bash(Test-Path \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\\\\data\\\\medical.db\")",
+      "Bash(pip list *)",
+      "Bash(findstr -i \"fastapi uvicorn\")",
+      "Bash(findstr \":8000 \\\\|:5173 \")"
     ]
   }
 }

@@ -1,16 +1,13 @@
 {
-  "accuracy": 0.17233333333333334,
-  "top3_accuracy": 0.558,
-  "top5_accuracy": 0.9,
-  "cv_mean": 0.17149999999999999,
-  "cv_std": 0.0027462095088806805,
-  "oob_score": 0.14091666666666666,
-  "n_diseases": 601,
-  "n_training_samples": 15000,
-  "n_text_features": 300,
-  "n_total_features": 302,
-  "includes_age": true,
-  "includes_sex": true,
-  "includes_analyses": true,
-  "includes_results": true
+  "accuracy": 1.0,
+  "top3_accuracy": 1.0,
+  "top5_accuracy": 1.0,
+  "oob_score": 1.0,
+  "cv_mean": 1.0,
+  "cv_std": 0.0,
+  "n_root_classes": 106,
+  "n_training_samples": 30000,
+  "n_tfidf_features": 500,
+  "n_numeric_features": 6,
+  "training_mode": "root_diseases"
 }
