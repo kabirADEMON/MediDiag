@@ -2,11 +2,13 @@
 Matching service - Core diagnostic matching engine
 """
 import pandas as pd
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 import logging
 from math import log
 
 from rapidfuzz import fuzz
+
+from app.services.motif_parser_service import CHRONIC_DISEASE_NAME_RE, ACUTE_DISEASE_NAME_RE
 
 from app.utils.similarity import (
     calculate_symptom_match_score,
@@ -57,7 +59,9 @@ class MatchingEngine:
         age: int,
         sex: str,
         symptoms: List[str],
-        top_n: int = 10
+        top_n: int = 10,
+        temporalite: Optional[str] = None,
+        symptomes_absents: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Match patient symptoms to diseases
@@ -155,6 +159,24 @@ class MatchingEngine:
                     for k in key_candidates
                 )
 
+                # Absent symptom reinforcement: if a disease symptom is explicitly
+                # negated in the motif, override key_symptom_absent to True
+                if not key_symptom_absent and symptomes_absents:
+                    cleaned_absent = [
+                        s.lower().strip() for s in symptomes_absents if s.strip()
+                    ]
+                    for dsym in disease_symptoms[:20]:
+                        for neg in cleaned_absent:
+                            if fuzz.token_sort_ratio(dsym, neg) >= 72:
+                                key_symptom_absent = True
+                                logger.info(
+                                    f"Absent symptom override '{neg}' matched "
+                                    f"'{dsym}' in {row['Maladie']}"
+                                )
+                                break
+                        if key_symptom_absent:
+                            break
+
                 results.append({
                     'disease_id': int(row['N°']),
                     'disease_name': row['Maladie'],
@@ -170,11 +192,31 @@ class MatchingEngine:
                     'key_symptom_absent': key_symptom_absent,
                 })
         
-        # Step 4: Sort by score and return top N
+        # Step 4: Temporality filter
+        if temporalite == 'aiguë':
+            for r in results:
+                if CHRONIC_DISEASE_NAME_RE.search(r['disease_name']):
+                    old = r['score']
+                    r['score'] = round(r['score'] * 0.25, 2)
+                    logger.info(
+                        f"Temporality malus (aiguë→chronique): "
+                        f"{r['disease_name']} {old} → {r['score']}"
+                    )
+        elif temporalite == 'chronique':
+            for r in results:
+                if ACUTE_DISEASE_NAME_RE.search(r['disease_name']):
+                    old = r['score']
+                    r['score'] = round(r['score'] * 0.4, 2)
+                    logger.info(
+                        f"Temporality malus (chronique→aigu): "
+                        f"{r['disease_name']} {old} → {r['score']}"
+                    )
+
+        # Step 5: Sort by score and return top N
         results.sort(key=lambda x: x['score'], reverse=True)
-        
+
         logger.info(f"Found {len(results)} matching diseases, returning top {top_n}")
-        
+
         return results[:top_n]
     
     def calculate_age_compatibility(

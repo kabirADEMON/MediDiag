@@ -13,6 +13,9 @@ class DiagnosticRequest(BaseModel):
     symptomes: List[str] = Field(..., min_items=1, description="List of symptoms")
     analyses: Optional[Dict[str, Any]] = Field(default=None, description="Lab results (optional)")
     analyses_anomalies: Optional[List[str]] = Field(default=None, description="Names of analyses flagged as abnormal")
+    # Motif NLP fields — populated by the frontend after parse-motif call
+    temporalite: Optional[str] = Field(default=None, description="Temporality extracted from motif: aiguë / chronique / inconnue")
+    symptomes_absents: Optional[List[str]] = Field(default=None, description="Symptoms explicitly negated in motif text")
     
     @validator('sexe')
     def validate_sexe(cls, v):

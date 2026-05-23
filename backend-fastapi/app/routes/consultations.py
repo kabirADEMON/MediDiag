@@ -100,58 +100,65 @@ async def create_consultation(consultation_data: dict):
         ))
         diagnostic_id = cursor.lastrowid
 
-        # Insert symptoms (one row per symptom)
+        # Insert symptoms — non-blocking (table structure may vary)
         for sym in symptomes:
             sym_name = sym if isinstance(sym, str) else str(sym)
-            cursor.execute(
-                "INSERT INTO symptomes (consultation_id, nom, intensite) VALUES (?, ?, ?)",
-                (consultation_id, sym_name[:200], 'modéré')
-            )
-
-        # Insert analysis results
-        for analyse_nom, analyse_val in analyses.items():
-            # Ensure analysis exists in catalogue
-            cursor.execute(
-                "INSERT IGNORE INTO analyses (nom) VALUES (?)",
-                (str(analyse_nom)[:200],)
-            )
-            cursor.execute("SELECT id FROM analyses WHERE nom = ?", (str(analyse_nom)[:200],))
-            analyse_row = cursor.fetchone()
-            analyse_id = analyse_row[0] if analyse_row else None
-
-            # Parse value (may be string "12.5 mg/dL" or dict)
-            if isinstance(analyse_val, dict):
-                valeur_texte = str(analyse_val.get('valeur', ''))[:50]
-                unite = str(analyse_val.get('unite', ''))[:20]
-                anormal = int(analyse_val.get('anormal', 0))
-            else:
-                valeur_texte = str(analyse_val)[:50]
-                unite = ''
-                anormal = 0
-
-            cursor.execute(
-                """INSERT INTO resultats_analyses
-                   (consultation_id, analyse_id, analyse_nom, valeur_texte, unite, anormal)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (consultation_id, analyse_id, str(analyse_nom)[:200], valeur_texte, unite, anormal)
-            )
-
-        # Insert top-4 diagnostic results
-        for rang, result in enumerate(diagnostic_results[:4], start=1):
-            cursor.execute(
-                """INSERT INTO diagnostic_resultats
-                   (diagnostic_id, rang, maladie, score, urgence, compatibilite_age, compatibilite_sexe)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    diagnostic_id,
-                    rang,
-                    result.get('maladie', '')[:200],
-                    result.get('score', 0),
-                    result.get('urgence', 'faible'),
-                    int(result.get('compatibilite_age', 1)),
-                    int(result.get('compatibilite_sexe', 1)),
+            try:
+                cursor.execute(
+                    "INSERT INTO symptomes (consultation_id, nom, intensite) VALUES (?, ?, ?)",
+                    (consultation_id, sym_name[:200], 'modéré')
                 )
-            )
+            except Exception as e_sym:
+                logger.warning(f"Symptom insert skipped (schema mismatch?): {e_sym}")
+
+        # Insert analysis results — non-blocking
+        for analyse_nom, analyse_val in analyses.items():
+            try:
+                cursor.execute(
+                    "INSERT IGNORE INTO analyses (nom) VALUES (?)",
+                    (str(analyse_nom)[:200],)
+                )
+                cursor.execute("SELECT id FROM analyses WHERE nom = ?", (str(analyse_nom)[:200],))
+                analyse_row = cursor.fetchone()
+                analyse_id = analyse_row[0] if analyse_row else None
+
+                if isinstance(analyse_val, dict):
+                    valeur_texte = str(analyse_val.get('valeur', ''))[:50]
+                    unite = str(analyse_val.get('unite', ''))[:20]
+                    anormal = int(analyse_val.get('anormal', 0))
+                else:
+                    valeur_texte = str(analyse_val)[:50]
+                    unite = ''
+                    anormal = 0
+
+                cursor.execute(
+                    """INSERT INTO resultats_analyses
+                       (consultation_id, analyse_id, analyse_nom, valeur_texte, unite, anormal)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (consultation_id, analyse_id, str(analyse_nom)[:200], valeur_texte, unite, anormal)
+                )
+            except Exception as e_ana:
+                logger.warning(f"Analysis insert skipped (schema mismatch?): {e_ana}")
+
+        # Insert top-4 diagnostic results — non-blocking
+        for rang, result in enumerate(diagnostic_results[:4], start=1):
+            try:
+                cursor.execute(
+                    """INSERT INTO diagnostic_resultats
+                       (diagnostic_id, rang, maladie, score, urgence, compatibilite_age, compatibilite_sexe)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        diagnostic_id,
+                        rang,
+                        result.get('maladie', '')[:200],
+                        result.get('score', 0),
+                        result.get('urgence', 'faible'),
+                        int(result.get('compatibilite_age', 1)),
+                        int(result.get('compatibilite_sexe', 1)),
+                    )
+                )
+            except Exception as e_diag:
+                logger.warning(f"Diagnostic result insert skipped: {e_diag}")
 
         # Create medical report
         rapport_titre = f"Rapport de consultation — {top_diagnostic or 'Diagnostic IA'}"

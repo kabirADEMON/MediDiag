@@ -16,19 +16,19 @@ logger = logging.getLogger(__name__)
 
 # ── Anti-anchoring ────────────────────────────────────────────────────────────
 
-def _apply_anti_anchoring(results: List[DiagnosticResult]) -> List[DiagnosticResult]:
+def _apply_anti_anchoring(
+    results: List[DiagnosticResult],
+    min_results: int = 3,
+    max_results: int = 4,
+) -> List[DiagnosticResult]:
     """
-    Cluster results by pathological root = text before the first '('.
+    Cluster results by pathological root (text before the first '(').
 
-    "Hépatite A (Sévère)" → root "Hépatite A"
-    "Hépatite A (Aiguë)"  → root "Hépatite A"  → variant of the winner above
-    "Hépatite A"          → root "Hépatite A"  → winner (if highest score)
-
-    Returns the 4 highest-scoring distinct roots, each with same-root variants
-    embedded in .variantes (ordered by descending score).
-    Results must be pre-sorted descending by score.
+    Returns up to max_results distinct roots, guaranteeing at least min_results
+    when the candidate list is large enough. Same-root variants are embedded in
+    .variantes of the winning entry.  Results must be pre-sorted descending.
     """
-    clusters: Dict[str, DiagnosticResult] = {}        # root → winner
+    clusters: Dict[str, DiagnosticResult] = {}
     cluster_variants: Dict[str, List[VarianteResult]] = {}
 
     for r in results:
@@ -41,11 +41,12 @@ def _apply_anti_anchoring(results: List[DiagnosticResult]) -> List[DiagnosticRes
                 VarianteResult(maladie=r.maladie, score=r.score, urgence=r.urgence)
             )
 
-    # Keep only top 4 roots (dict preserves insertion = score-descending order)
-    top4_roots = list(clusters.keys())[:4]
+    # Return between min_results and max_results distinct roots
+    n_show = min(max_results, max(min_results, len(clusters)))
+    top_roots = list(clusters.keys())[:n_show]
 
     final: List[DiagnosticResult] = []
-    for root in top4_roots:
+    for root in top_roots:
         winner = clusters[root]
         variants = cluster_variants[root]
         if variants:
@@ -93,12 +94,15 @@ class DiagnosticService:
             logger.info(f"Starting diagnostic for age={request.age}, sex={request.sexe}")
             logger.info(f"Symptoms: {request.symptomes}")
             
-            # Step 1: Match diseases
+            # Step 1: Match diseases — fetch extra candidates so anti-anchoring
+            # can always surface at least 3 distinct roots
             matched_diseases = self.matching_engine.match_diseases(
                 age=request.age,
                 sex=request.sexe,
                 symptoms=request.symptomes,
-                top_n=top_n
+                top_n=max(top_n, 30),
+                temporalite=request.temporalite,
+                symptomes_absents=request.symptomes_absents,
             )
             
             if not matched_diseases:

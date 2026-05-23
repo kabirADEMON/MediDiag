@@ -69,51 +69,42 @@ class MLPredictor:
         min_probability: float = 0.01
     ) -> List[Dict]:
         """
-        Predict diseases from symptoms (+ age/sex if model supports it)
-        
-        Args:
-            symptoms: List of symptom strings
-            age: Patient age (optional)
-            sex: Patient sex M/F (optional)
-            top_n: Number of top predictions to return
-            min_probability: Minimum probability threshold
-            
-        Returns:
-            List of prediction dictionaries with disease_name, probability, ml_score
+        Predict root diseases from symptoms + age + sex.
+        Returns root names (e.g. "Pneumonie") not variants.
         """
         if not self.is_loaded:
             if not self.load_model():
                 logger.warning("ML model not available, returning empty predictions")
                 return []
-        
+
         try:
-            # Combine symptoms into text
             symptom_text = ' '.join([s.lower().strip() for s in symptoms if s])
-            
+
             if not symptom_text:
                 return []
-            
-            # Vectorize text
+
             X_text = self.vectorizer.transform([symptom_text])
-            
-            # If model supports age/sex, add them
+
             if self.scaler is not None:
-                # Default values if not provided
                 if age is None:
                     age = 40
                 if sex is None:
                     sex = 'M'
-                
-                # Encode sex (M=0, F=1)
-                X_sex = np.array([[0 if sex == 'M' else 1]])
-                
-                # Scale age
-                X_age = self.scaler.transform([[age]])
-                
-                # Combine features
-                X = hstack([X_text, csr_matrix(X_age), csr_matrix(X_sex)])
+
+                # 6-feature vector matching train_model.py generate_synthetic_cases
+                # age_norm: global 0-120 approximation (training used per-disease Age_Min/Max)
+                age_norm_raw = np.clip(age / 120.0, 0.0, 1.0)
+                age_norm_scaled = self.scaler.transform([[age_norm_raw]])[0][0]
+
+                is_child  = 1 if age < 18 else 0
+                is_young  = 1 if 18 <= age < 40 else 0
+                is_middle = 1 if 40 <= age < 65 else 0
+                is_senior = 1 if age >= 65 else 0
+                sex_enc   = 0 if sex == 'M' else 1
+
+                nums = np.array([[age_norm_scaled, is_child, is_young, is_middle, is_senior, sex_enc]])
+                X = hstack([X_text, csr_matrix(nums)])
             else:
-                # Old model without age/sex
                 X = X_text
             
             # Predict probabilities

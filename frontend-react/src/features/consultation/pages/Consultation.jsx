@@ -3,14 +3,14 @@
  * Workflow: symptômes → diagnostic préliminaire → analyses → diagnostic final → validation → PDF
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Stethoscope, Search, CheckCircle, AlertCircle, ChevronRight,
   ChevronDown, Plus, X, RotateCcw, FileDown, Save, ThumbsUp,
-  ThumbsDown, Loader2,
+  ThumbsDown, Loader2, Sparkles, Clock, Ban,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -283,6 +283,37 @@ const URGENCY_BADGE = {
 function urgencyStyle(u) { return URGENCY_STYLE[u] || URGENCY_STYLE.faible }
 function urgencyBadge(u) { return URGENCY_BADGE[u] || 'default' }
 
+// ─── Exam grouping helper ─────────────────────────────────────────────────────
+function buildGroupedExams(diagnostics) {
+  if (!diagnostics?.length) return { commonExams: [], groups: [] }
+
+  // Count how many diseases mention each exam
+  const examCount = {}
+  diagnostics.forEach(d => {
+    ;(d.examens_recommandes || []).forEach(e => {
+      examCount[e] = (examCount[e] || 0) + 1
+    })
+  })
+
+  // Exams shared by 2+ diseases → common block
+  const commonExamSet = new Set(
+    Object.entries(examCount).filter(([, c]) => c >= 2).map(([e]) => e)
+  )
+
+  // Per-disease groups (only their exclusive exams)
+  const groups = diagnostics
+    .map(d => ({
+      maladie: d.maladie,
+      score: Math.round(d.score),
+      urgence: d.urgence,
+      exams: (d.examens_recommandes || []).filter(e => !commonExamSet.has(e)),
+      isWeak: d.score < 10,
+    }))
+    .filter(g => g.exams.length > 0)
+
+  return { commonExams: [...commonExamSet], groups }
+}
+
 // ─── Step indicator ───────────────────────────────────────────────────────────
 function StepBar({ step }) {
   const steps = ['Patient & Symptômes', 'Diagnostic préliminaire', 'Analyses & Affinage', 'Validation finale']
@@ -482,6 +513,12 @@ export function Consultation() {
   const [error, setError] = useState('')
   const [symptomWarning, setSymptomWarning] = useState('')
   const [sessionRestored, setSessionRestored] = useState(false)
+  const [showWeakExams, setShowWeakExams] = useState(false)
+
+  // Motif NLP parsing
+  const [parsedMotif, setParsedMotif] = useState(null)   // structured result from backend parser
+  const [parsingMotif, setParsingMotif] = useState(false)
+  const motifDebounceRef = useRef(null)
 
   useEffect(() => {
     loadSuggestions()
@@ -542,6 +579,35 @@ export function Consultation() {
     }
   }, [patientCode])
 
+  // Debounced motif parsing (600 ms after last keystroke)
+  useEffect(() => {
+    if (motifDebounceRef.current) clearTimeout(motifDebounceRef.current)
+    if (!motif || motif.trim().length < 8) {
+      setParsedMotif(null)
+      return
+    }
+    motifDebounceRef.current = setTimeout(async () => {
+      setParsingMotif(true)
+      try {
+        const res = await diagnosticApi.parseMotif(motif.trim(), sexe)
+        if (res.success) {
+          const d = res.data?.data || res.data
+          // Only show card if something meaningful was found
+          if (d.temporalite !== 'inconnue' || d.symptomes_extraits.length > 0 || d.symptomes_absents.length > 0) {
+            setParsedMotif(d)
+          } else {
+            setParsedMotif(null)
+          }
+        }
+      } catch {
+        // silent — parsing is best-effort
+      } finally {
+        setParsingMotif(false)
+      }
+    }, 600)
+    return () => clearTimeout(motifDebounceRef.current)
+  }, [motif, sexe])
+
   const loadSuggestions = async () => {
     try {
       const [sr, ar] = await Promise.all([metadataApi.getSymptoms(), metadataApi.getAnalyses()])
@@ -594,7 +660,11 @@ export function Consultation() {
     setLoading(true)
     setError('')
     try {
-      const res = await diagnosticApi.performDiagnostic({ age, sexe, symptomes: symptoms, analyses: {} })
+      const res = await diagnosticApi.performDiagnostic({
+        age, sexe, symptomes: symptoms, analyses: {},
+        temporalite: parsedMotif?.temporalite || undefined,
+        symptomes_absents: parsedMotif?.symptomes_absents?.length ? parsedMotif.symptomes_absents : undefined,
+      })
       if (res.success) {
         const data = res.data?.data || res.data
         if (!data.diagnostics || data.diagnostics.length === 0) {
@@ -602,19 +672,8 @@ export function Consultation() {
           return
         }
         setPrelimResults(data)
+        setRecommendedAnalyses(buildGroupedExams(data.diagnostics))
         setStep(1)
-
-        // Auto-load recommended analyses
-        setLoadingReco(true)
-        try {
-          const reco = await diagnosticApi.getRecommendedExaminations({ age, sexe, symptomes: symptoms, analyses: {} })
-          if (reco.success) {
-            const rd = reco.data?.data || reco.data
-            setRecommendedAnalyses(rd?.analyses || [])
-          }
-        } finally {
-          setLoadingReco(false)
-        }
       } else {
         setError(res.error || 'Erreur lors du diagnostic')
       }
@@ -654,6 +713,8 @@ export function Consultation() {
         age, sexe, symptomes: symptoms,
         analyses: cleanedAnalyses,
         analyses_anomalies: anomalies.length > 0 ? anomalies : undefined,
+        temporalite: parsedMotif?.temporalite || undefined,
+        symptomes_absents: parsedMotif?.symptomes_absents?.length ? parsedMotif.symptomes_absents : undefined,
       })
       if (res.success) {
         const data = res.data?.data || res.data
@@ -791,6 +852,14 @@ export function Consultation() {
     setSavedData(null); setError(''); setRecommendedAnalyses([])
     setSymptomWarning(''); setSessionRestored(false)
     setSelectedPatient(null); setPatientCode(''); setAge(''); setSexe('M')
+    setParsedMotif(null)
+  }
+
+  // Accept all extracted symptoms from motif parser
+  const acceptExtractedSymptoms = () => {
+    if (!parsedMotif?.symptomes_extraits?.length) return
+    const toAdd = parsedMotif.symptomes_extraits.filter(s => !symptoms.includes(s))
+    if (toAdd.length) setSymptoms(prev => [...prev, ...toAdd])
   }
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -910,14 +979,102 @@ export function Consultation() {
 
             {/* Motif */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-3">Motif de consultation <span className="text-red-500">*</span></h2>
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">
+                Motif de consultation <span className="text-red-500">*</span>
+                {parsingMotif && <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-blue-400" />}
+              </h2>
               <textarea
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                rows={2}
-                placeholder="Ex : Fièvre persistante depuis 3 jours, douleurs abdominales..."
+                rows={3}
+                placeholder="Ex : Douleurs pelviennes aiguës depuis 2 jours, saignements vaginaux de couleur sombre, sans fièvre ni écoulement..."
                 value={motif}
                 onChange={e => setMotif(e.target.value)}
               />
+
+              {/* ── NLP Extraction Card ── */}
+              {parsedMotif && (
+                <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Analyse automatique du motif
+                    </div>
+                    <button onClick={() => setParsedMotif(null)} className="text-blue-300 hover:text-blue-500">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Temporalité */}
+                  {parsedMotif.temporalite !== 'inconnue' && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="text-xs text-blue-800">
+                        Temporalité détectée :{' '}
+                        <span className={`font-semibold ${parsedMotif.temporalite === 'aiguë' ? 'text-amber-700' : 'text-purple-700'}`}>
+                          {parsedMotif.temporalite}
+                        </span>
+                        {parsedMotif.filtres_diagnostic?.exclure_chroniques && (
+                          <span className="ml-1 text-amber-600">(maladies chroniques pénalisées dans le score)</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Symptômes détectés */}
+                  {parsedMotif.symptomes_extraits?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-blue-700 mb-1.5">
+                        Symptômes détectés dans le motif :
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {parsedMotif.symptomes_extraits.map(s => {
+                          const alreadyAdded = symptoms.includes(s)
+                          return (
+                            <button
+                              key={s}
+                              disabled={alreadyAdded}
+                              onClick={() => !alreadyAdded && addSymptom(s)}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                                alreadyAdded
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default'
+                                  : 'bg-white border-blue-300 text-blue-700 hover:bg-blue-100 cursor-pointer'
+                              }`}
+                            >
+                              {alreadyAdded ? <CheckCircle className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                              {s}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {parsedMotif.symptomes_extraits.some(s => !symptoms.includes(s)) && (
+                        <button
+                          onClick={acceptExtractedSymptoms}
+                          className="mt-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 underline"
+                        >
+                          Ajouter tous
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Symptômes absents explicitement niés */}
+                  {parsedMotif.symptomes_absents?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        <Ban className="inline w-3 h-3 mr-1 text-red-400" />
+                        Explicitement niés (pris en compte dans le diagnostic) :
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {parsedMotif.symptomes_absents.map(s => (
+                          <span key={s} className="px-2 py-0.5 rounded-full text-xs bg-red-50 border border-red-200 text-red-600 line-through">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1127,10 +1284,11 @@ export function Consultation() {
                                 </select>
                               ) : (
                                 <input
-                                  type="text"
+                                  type={norm ? 'number' : 'text'}
+                                  step={norm ? 'any' : undefined}
                                   value={value}
                                   onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
-                                  placeholder={norm ? `Entrez la valeur (normale : ${norm.min}–${norm.max} ${norm.unit || ''})` : 'Valeur...'}
+                                  placeholder={norm ? `Normale : ${norm.min}–${norm.max} ${norm.unit || ''}` : 'Valeur...'}
                                   className={`flex-1 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
                                     abnormal
                                       ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200 placeholder-red-300'
@@ -1174,78 +1332,124 @@ export function Consultation() {
               </div>
             </div>
 
-            {/* Right — IA suggestions */}
+            {/* Right — Examens groupés par maladie */}
             <div className="xl:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-slate-800">Suggestions de l'IA</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Basées sur le diagnostic préliminaire</p>
-                </div>
-                {recommendedAnalyses.length > 0 && (
-                  <button
-                    onClick={() => {
-                      const toAdd = {}
-                      recommendedAnalyses.slice(0, 12).forEach(a => {
-                        if (!(a.name in analyses)) toAdd[a.name] = ''
-                      })
-                      setAnalyses({ ...analyses, ...toAdd })
-                    }}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-                  >
-                    Tout ajouter
-                  </button>
-                )}
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="text-sm font-semibold text-slate-800">Examens suggérés par l'IA</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Groupés par hypothèse diagnostique — cochez ceux à réaliser</p>
               </div>
 
-              <div className="p-3">
-                {loadingReco ? (
-                  <div className="flex items-center gap-2 text-slate-400 text-sm py-6 justify-center">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Génération...
-                  </div>
-                ) : recommendedAnalyses.length > 0 ? (
-                  <div className="space-y-1 max-h-[420px] overflow-y-auto pr-0.5">
-                    {recommendedAnalyses.slice(0, 12).map((a, i) => {
-                      const pct = a.percentage ?? (a.priority === 'high' ? 70 : a.priority === 'medium' ? 40 : 20)
-                      const added = a.name in analyses
-                      return (
-                        <div
-                          key={i}
-                          className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                            added ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
-                              <span className={`text-xs font-bold shrink-0 tabular-nums ${
-                                pct >= 60 ? 'text-red-600' : pct >= 40 ? 'text-amber-600' : 'text-slate-400'
-                              }`}>{pct}%</span>
-                            </div>
-                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${pct >= 60 ? 'bg-red-400' : pct >= 40 ? 'bg-amber-400' : 'bg-blue-300'}`}
-                                style={{ width: `${Math.min(pct, 100)}%` }}
-                              />
-                            </div>
+              <div className="p-3 max-h-[520px] overflow-y-auto space-y-3">
+                {(() => {
+                  const grouped = recommendedAnalyses
+                  if (!grouped || (!grouped.commonExams?.length && !grouped.groups?.length)) {
+                    return <p className="text-sm text-slate-400 py-8 text-center">Aucune suggestion disponible</p>
+                  }
+
+                  const addExam = (name) => {
+                    if (!(name in analyses)) setAnalyses(prev => ({ ...prev, [name]: '' }))
+                  }
+                  const addAll = (exams) => {
+                    const toAdd = {}
+                    exams.forEach(e => { if (!(e in analyses)) toAdd[e] = '' })
+                    setAnalyses(prev => ({ ...prev, ...toAdd }))
+                  }
+
+                  const ExamChip = ({ name }) => {
+                    const added = name in analyses
+                    return (
+                      <button
+                        onClick={() => addExam(name)}
+                        disabled={added}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                          added
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                        }`}
+                      >
+                        <span>{added ? '✓' : '+'}</span>
+                        <span className="truncate max-w-[140px]">{name}</span>
+                      </button>
+                    )
+                  }
+
+                  const mainGroups = grouped.groups?.filter(g => !g.isWeak) || []
+                  const weakGroups = grouped.groups?.filter(g => g.isWeak) || []
+
+                  return (
+                    <>
+                      {/* Examens communs */}
+                      {grouped.commonExams?.length > 0 && (
+                        <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                              Examens communs à plusieurs hypothèses
+                            </span>
+                            <button
+                              onClick={() => addAll(grouped.commonExams)}
+                              className="text-xs text-blue-600 font-semibold hover:underline"
+                            >
+                              Tout ajouter
+                            </button>
                           </div>
-                          <button
-                            onClick={() => { if (!added) setAnalyses({ ...analyses, [a.name]: '' }) }}
-                            disabled={added}
-                            className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-colors ${
-                              added
-                                ? 'bg-emerald-100 text-emerald-600 cursor-default'
-                                : 'border border-blue-200 text-blue-600 hover:bg-blue-50'
-                            }`}
-                          >
-                            {added ? '✓' : '+'}
-                          </button>
+                          <div className="flex flex-wrap gap-1.5">
+                            {grouped.commonExams.map(e => <ExamChip key={e} name={e} />)}
+                          </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-400 py-8 text-center">Aucune suggestion disponible</p>
-                )}
+                      )}
+
+                      {/* Groupes principaux (score ≥ 10%) */}
+                      {mainGroups.map((g, i) => (
+                        <div key={i} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="min-w-0">
+                              <span className="text-xs font-semibold text-slate-800 truncate block">{g.maladie}</span>
+                              <span className={`text-xs font-bold tabular-nums ${
+                                g.score >= 60 ? 'text-red-600' : g.score >= 30 ? 'text-amber-600' : 'text-slate-400'
+                              }`}>{g.score}%</span>
+                            </div>
+                            <button
+                              onClick={() => addAll(g.exams)}
+                              className="text-xs text-blue-600 font-semibold hover:underline shrink-0 ml-2"
+                            >
+                              Tout
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {g.exams.map(e => <ExamChip key={e} name={e} />)}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Groupes faibles (score < 10%) — masqués par défaut */}
+                      {weakGroups.length > 0 && (
+                        <div>
+                          <button
+                            onClick={() => setShowWeakExams(v => !v)}
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-dashed border-slate-300 text-xs text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-colors"
+                          >
+                            <span>{showWeakExams ? '▲' : '▼'} Hypothèses différentielles faibles (&lt;10%) — {weakGroups.length} maladie(s)</span>
+                          </button>
+                          {showWeakExams && (
+                            <div className="mt-2 space-y-2">
+                              {weakGroups.map((g, i) => (
+                                <div key={i} className="rounded-lg border border-slate-100 bg-slate-50 p-3 opacity-75">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-semibold text-slate-600 truncate">{g.maladie}</span>
+                                    <span className="text-xs text-slate-400 tabular-nums">{g.score}%</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {g.exams.map(e => <ExamChip key={e} name={e} />)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
             </div>
           </div>

@@ -34,6 +34,13 @@ export async function getRecommendedExaminations(diagnosticData) {
 }
 
 /**
+ * Parse free-text consultation motif and extract structured clinical data
+ */
+export async function parseMotif(motif, sexe = 'M') {
+  return post('/diagnostic/parse-motif', { motif, sexe })
+}
+
+/**
  * Get all diagnostics with pagination
  */
 export async function getDiagnostics(params = {}) {
