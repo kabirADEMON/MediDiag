@@ -144,6 +144,99 @@ const ANALYSES_NORMS = {
   'Coproculture':         null,
 }
 
+// ─── Analysis guide: type + description + options for qualitative tests ──────
+// type: 'numerique' | 'qualitatif' | 'imagerie' | 'microbiologie'
+const ANALYSES_GUIDE = {
+  // ── Microbiologie / cultures ─────────────────────────────────────────────
+  'Hémoculture':            { type: 'microbiologie', desc: 'Recherche de bactéries dans le sang. Négatif = pas d\'infection dans le sang.', options: ['Négatif (stérile)', 'Positif (bactérie identifiée)', 'Non réalisé'] },
+  'ECBU':                   { type: 'microbiologie', desc: 'Analyse des urines pour détecter une infection urinaire (cystite, pyélonéphrite).', options: ['Négatif (stérile)', 'Positif (bactérie ≥10³ UFC/mL)', 'Non réalisé'] },
+  'Coproculture':           { type: 'microbiologie', desc: 'Recherche de bactéries dans les selles (gastro-entérite infectieuse).', options: ['Négatif', 'Positif (pathogène identifié)', 'Non réalisé'] },
+  'Frottis':                { type: 'microbiologie', desc: 'Examen microscopique d\'un prélèvement pour identifier des bactéries ou cellules anormales.', options: ['Négatif (normal)', 'Positif (anomalie identifiée)', 'Non réalisé'] },
+  'Frottis coloré':         { type: 'microbiologie', desc: 'Coloration du prélèvement pour visualiser les bactéries au microscope (cocci, bacilles...).', options: ['Négatif', 'Positif (bactéries présentes)', 'Non réalisé'] },
+  'Antibiogramme':          { type: 'microbiologie', desc: 'Test pour savoir quels antibiotiques peuvent tuer la bactérie trouvée.', options: ['Sensible (antibiotique efficace)', 'Résistant', 'Non réalisé'] },
+  'Prélèvement conjonctival': { type: 'microbiologie', desc: 'Prélèvement de l\'œil pour identifier une bactérie responsable d\'une conjonctivite.', options: ['Négatif', 'Positif (germe identifié)', 'Non réalisé'] },
+  'Prélèvement vaginal':    { type: 'microbiologie', desc: 'Recherche de bactéries, champignons ou parasites responsables d\'une infection génitale.', options: ['Négatif (flore normale)', 'Positif (pathogène identifié)', 'Non réalisé'] },
+  'Prélèvement urétral':    { type: 'microbiologie', desc: 'Recherche d\'IST (gonococcie, chlamydia...) dans l\'urètre.', options: ['Négatif', 'Positif (pathogène identifié)', 'Non réalisé'] },
+  'Prélèvement de gorge':   { type: 'microbiologie', desc: 'Recherche du streptocoque ou autre bactérie responsable d\'une angine.', options: ['Négatif', 'Positif (Streptocoque A)', 'Positif (autre bactérie)', 'Non réalisé'] },
+
+  // ── PCR / Tests moléculaires ──────────────────────────────────────────────
+  'PCR':                    { type: 'qualitatif', desc: 'Test très précis qui détecte le matériel génétique d\'un virus ou bactérie.', options: ['Négatif (non détecté)', 'Positif (détecté)', 'Non réalisé'] },
+  'PCR Chlamydia':          { type: 'qualitatif', desc: 'Détecte la bactérie Chlamydia (IST fréquente, souvent sans symptômes). Transmise sexuellement.', options: ['Négatif (non détecté)', 'Positif (Chlamydia détecté)', 'Non réalisé'] },
+  'PCR Mycoplasme':         { type: 'qualitatif', desc: 'Détecte Mycoplasma pneumoniae, responsable de pneumonies atypiques.', options: ['Négatif', 'Positif', 'Non réalisé'] },
+  'PCR BK':                 { type: 'qualitatif', desc: 'Détecte la bactérie de la tuberculose (Bacille de Koch).', options: ['Négatif', 'Positif (tuberculose)', 'Non réalisé'] },
+  'PCR COVID':              { type: 'qualitatif', desc: 'Détecte le coronavirus SARS-CoV-2 responsable du COVID-19.', options: ['Négatif', 'Positif', 'Non réalisé'] },
+  'PCR VIH':                { type: 'qualitatif', desc: 'Mesure la quantité de virus VIH dans le sang (charge virale).', options: ['Indétectable', 'Détectable (charge virale mesurée)', 'Non réalisé'] },
+  'PCR Herpès':             { type: 'qualitatif', desc: 'Détecte le virus Herpès Simplex (HSV 1 ou 2).', options: ['Négatif', 'Positif (HSV-1)', 'Positif (HSV-2)', 'Non réalisé'] },
+  'PCR paludisme':          { type: 'qualitatif', desc: 'Détecte le parasite du paludisme (Plasmodium) dans le sang.', options: ['Négatif', 'Positif', 'Non réalisé'] },
+
+  // ── Tests rapides / sérologies ────────────────────────────────────────────
+  'Test rapide':            { type: 'qualitatif', desc: 'Test rapide d\'orientation diagnostique (TROD). Résultat en quelques minutes.', options: ['Négatif', 'Positif', 'Non réalisé'] },
+  'TDR paludisme':          { type: 'qualitatif', desc: 'Test rapide de détection du paludisme (antigène plasmodium). Résultat en 15 min.', options: ['Négatif', 'Positif', 'Non réalisé'] },
+  'Sérologie':              { type: 'qualitatif', desc: 'Mesure les anticorps dans le sang. Indique si le corps a déjà rencontré un agent infectieux.', options: ['Négatif', 'Positif (anticorps détectés)', 'Non réalisé'] },
+  'Test de Mantoux':        { type: 'qualitatif', desc: 'Test cutané pour détecter une exposition à la tuberculose (intradermoréaction). Lecture à 72h.', options: ['Négatif (induration < 5mm)', 'Positif (induration ≥ 10mm)', 'Non réalisé'] },
+  'IDR tuberculine':        { type: 'qualitatif', desc: 'Injection sous-cutanée pour tester l\'exposition à la tuberculose.', options: ['Négatif (< 5mm)', 'Positif (≥ 10mm)', 'Non réalisé'] },
+  'Sérologie Chlamydia':    { type: 'qualitatif', desc: 'Détecte les anticorps anti-Chlamydia dans le sang.', options: ['Négatif', 'Positif IgG', 'Positif IgM (infection récente)', 'Non réalisé'] },
+  'Sérologie VIH':          { type: 'qualitatif', desc: 'Test de dépistage du VIH. Un résultat positif doit être confirmé par Western Blot.', options: ['Négatif', 'Positif (à confirmer)', 'Non réalisé'] },
+  'AgHBs':                  { type: 'qualitatif', desc: 'Antigène de surface du virus Hépatite B — détecte une infection active par l\'hépatite B.', options: ['Négatif (pas d\'infection active)', 'Positif (hépatite B active)', 'Non réalisé'] },
+  'Anticorps anti-HCV':     { type: 'qualitatif', desc: 'Détecte une exposition au virus de l\'hépatite C.', options: ['Négatif', 'Positif (à confirmer par PCR)', 'Non réalisé'] },
+  'Widal':                  { type: 'qualitatif', desc: 'Recherche d\'anticorps contre la fièvre typhoïde (Salmonella Typhi).', options: ['Négatif (< 1/80)', 'Positif (≥ 1/160, typhoid probable)', 'Non réalisé'] },
+  'Frottis sanguin':        { type: 'microbiologie', desc: 'Examen au microscope des globules rouges pour chercher un parasite (paludisme, anémie falciforme).', options: ['Négatif (pas de parasite)', 'Positif (Plasmodium détecté)', 'Drépanocytes présents', 'Non réalisé'] },
+  'Goutte épaisse':         { type: 'microbiologie', desc: 'Technique de référence pour détecter le paludisme au microscope.', options: ['Négatif', 'Positif (Plasmodium présent)', 'Non réalisé'] },
+
+  // ── Imagerie ──────────────────────────────────────────────────────────────
+  'Radio':                  { type: 'imagerie', desc: 'Radiographie — image par rayons X des os ou organes.', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'Radiographie':           { type: 'imagerie', desc: 'Image par rayons X. Montre les os, les poumons et certains organes.', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'Radio pulmonaire':       { type: 'imagerie', desc: 'Radiographie des poumons. Détecte pneumonie, tuberculose, épanchement pleural.', options: ['Normal', 'Infiltrat (infection)', 'Épanchement pleural', 'Opacité suspecte', 'Non réalisé'] },
+  'Radio thoracique':       { type: 'imagerie', desc: 'Radiographie du thorax pour évaluer les poumons et le cœur.', options: ['Normal', 'Cardiomégalie (cœur élargi)', 'Opacité pulmonaire', 'Anomalie détectée', 'Non réalisé'] },
+  'Échographie':            { type: 'imagerie', desc: 'Examen par ultrasons, sans rayons X. Visualise les organes internes (foie, reins, vésicule...).', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'Échographie abdominale': { type: 'imagerie', desc: 'Visualise les organes du ventre : foie, reins, vésicule biliaire, rate, pancréas.', options: ['Normal', 'Lithiase vésiculaire (calculs)', 'Hépatomégalie (foie gros)', 'Anomalie détectée', 'Non réalisé'] },
+  'Échographie pelvienne':  { type: 'imagerie', desc: 'Visualise les organes du bassin : utérus, ovaires (femme), prostate (homme), vessie.', options: ['Normal', 'Masse détectée', 'Kyste ovarien', 'Anomalie utérine', 'Non réalisé'] },
+  'Échographie pelvienne endo-vaginale': { type: 'imagerie', desc: 'Échographie interne par voie vaginale — image plus précise de l\'utérus et des ovaires. Indolore.', options: ['Normal', 'Endomètre épaissi', 'Kyste ovarien', 'Masse suspecte', 'Non réalisé'] },
+  'Échographie cardiaque':  { type: 'imagerie', desc: 'Visualise le cœur en mouvement (échocardiographie). Évalue la fonction cardiaque.', options: ['Normal', 'Insuffisance valvulaire', 'Dilatation cardiaque', 'Anomalie détectée', 'Non réalisé'] },
+  'Échographie thyroïdienne': { type: 'imagerie', desc: 'Visualise la glande thyroïde pour détecter nodules ou gonflements.', options: ['Normal', 'Nodule détecté', 'Goitre (thyroïde élargie)', 'Non réalisé'] },
+  'Scanner':                { type: 'imagerie', desc: 'Tomodensitométrie (TDM) — images détaillées en coupe. Plus précis que la radio.', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'TDM':                    { type: 'imagerie', desc: 'Scanner (tomodensitométrie). Images très détaillées des organes en coupes transversales.', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'IRM':                    { type: 'imagerie', desc: 'Imagerie par résonance magnétique — très précise, sans rayons X. Idéale pour le cerveau, les articulations, les tissus mous.', options: ['Normal', 'Anomalie détectée', 'Non réalisé'] },
+  'IRM pelvienne':          { type: 'imagerie', desc: 'IRM du bassin — examen de référence pour les maladies de l\'utérus, des ovaires et de la prostate.', options: ['Normal', 'Endométriose suspectée', 'Masse pelvienne', 'Anomalie détectée', 'Non réalisé'] },
+  'IRM cérébrale':          { type: 'imagerie', desc: 'IRM du cerveau — détecte AVC, tumeurs, inflammation, sclérose en plaques.', options: ['Normal', 'Lésion ischémique (AVC)', 'Masse suspecte', 'Plaques de démyélinisation', 'Non réalisé'] },
+  'IRM rachis':             { type: 'imagerie', desc: 'IRM de la colonne vertébrale — évalue hernie discale, compression médullaire.', options: ['Normal', 'Hernie discale', 'Compression nerveuse', 'Anomalie détectée', 'Non réalisé'] },
+  'Coloscopie':             { type: 'imagerie', desc: 'Examen visuel de l\'intérieur du côlon avec une caméra. Recherche polypes, cancer, inflammation.', options: ['Normal', 'Polypes détectés', 'Inflammation (MICI)', 'Masse suspecte', 'Non réalisé'] },
+  'Fibroscopie gastrique':  { type: 'imagerie', desc: 'Examen visuel de l\'estomac et de l\'œsophage. Détecte ulcères, gastrite, cancer.', options: ['Normal', 'Ulcère gastrique', 'Gastrite', 'Anomalie détectée', 'Non réalisé'] },
+  'Fond d\'œil':            { type: 'imagerie', desc: 'Examen de la rétine — détecte complications du diabète, hypertension, glaucome.', options: ['Normal', 'Rétinopathie diabétique', 'Papillœdème (HTA)', 'Anomalie détectée', 'Non réalisé'] },
+  'ECG':                    { type: 'imagerie', desc: 'Électrocardiogramme — enregistre l\'activité électrique du cœur. Détecte arythmies, infarctus.', options: ['Normal (rythme sinusal)', 'Fibrillation auriculaire', 'Bloc de branche', 'Sus-décalage ST (infarctus)', 'Anomalie détectée', 'Non réalisé'] },
+  'EEG':                    { type: 'imagerie', desc: 'Électroencéphalogramme — enregistre l\'activité du cerveau. Utilisé pour l\'épilepsie.', options: ['Normal', 'Anomalie épileptiforme', 'Non réalisé'] },
+  'Spirométrie':            { type: 'imagerie', desc: 'Mesure de la capacité pulmonaire. Confirme l\'asthme ou la BPCO.', options: ['Normal', 'Syndrome obstructif (asthme/BPCO)', 'Syndrome restrictif', 'Non réalisé'] },
+
+  // ── Anatomopathologie / biopsies ──────────────────────────────────────────
+  'Biopsie':                { type: 'qualitatif', desc: 'Prélèvement d\'un fragment de tissu analysé au microscope. Permet de confirmer ou exclure un cancer.', options: ['Bénin (non cancéreux)', 'Malin (cancéreux)', 'Inflammation', 'Non concluant', 'Non réalisé'] },
+  'Cytologie':              { type: 'qualitatif', desc: 'Analyse des cellules (frottis cervical, expectoration...). Recherche de cellules anormales.', options: ['Normal (cellules saines)', 'Cellules atypiques', 'Cellules malignes suspectes', 'Non réalisé'] },
+  'Frottis cervico-vaginal': { type: 'qualitatif', desc: 'Dépistage du cancer du col de l\'utérus. Analyse des cellules du col.', options: ['Normal', 'ASCUS (atypie légère)', 'Lésion de bas grade', 'Lésion de haut grade', 'Non réalisé'] },
+  'Anatomopathologie':      { type: 'qualitatif', desc: 'Analyse microscopique d\'un tissu prélevé. Résultat définitif sur la nature d\'une lésion.', options: ['Bénin', 'Malin', 'Inflammation chronique', 'Non réalisé'] },
+}
+
+function findGuide(name) {
+  if (!name) return null
+  if (ANALYSES_GUIDE[name]) return ANALYSES_GUIDE[name]
+  const norm = normalizeStr(name)
+  for (const [key, guide] of Object.entries(ANALYSES_GUIDE)) {
+    const kn = normalizeStr(key)
+    if (norm === kn) return guide
+    if (norm.includes(kn) || kn.includes(norm)) return guide
+  }
+  return null
+}
+
+function isQualitativeAbnormal(value) {
+  if (!value) return false
+  const v = value.toLowerCase()
+  return v.includes('positif') || v.includes('présent') || v.includes('anormal') ||
+    v.includes('anomalie') || v.includes('malin') || v.includes('pathogène') ||
+    v.includes('bactérie') || v.includes('détecté') || v.includes('sus-décalage') ||
+    v.includes('insuffisance') || v.includes('lésion') || v.includes('masse') ||
+    v.includes('haut grade') || v.includes('fibrill') || v.includes('bloc de') ||
+    v.includes('compression') || v.includes('hernie') || v.includes('épilept')
+}
+
 // Accent-normalisation helper
 function normalizeStr(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
@@ -222,7 +315,7 @@ function StepBar({ step }) {
 function generatePDF({ patient, motif, symptoms, analyses, diagnostics, finalDiag, notes, medecin, validated }) {
   const printWin = window.open('', '_blank', 'width=800,height=900')
   const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const top3 = (diagnostics || []).slice(0, 4)
+  const topAlt = (diagnostics || []).slice(1, 4)
 
   printWin.document.write(`<!DOCTYPE html><html lang="fr"><head>
 <meta charset="UTF-8">
@@ -294,22 +387,22 @@ ${Object.keys(analyses || {}).length > 0 ? `
 </div>` : ''}
 
 <div class="section">
-  <h2>Résultats du diagnostic IA (top ${top3.length})</h2>
-  ${top3.map((d, i) => `
-  <div class="diag-card ${i === 0 ? 'first' : ''}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div>
-        ${i === 0 ? '<span style="font-size:10px;font-weight:700;background:#2563eb;color:white;padding:2px 8px;border-radius:10px;margin-right:6px">PRINCIPAL</span>' : ''}
-        <span class="diag-name">${d.maladie}</span>
-      </div>
-      <span style="font-weight:700;font-size:14px">${formatScore(d.score)}</span>
+  <h2>Diagnostic final validé par le médecin</h2>
+  ${finalDiag ? `
+  <div class="final-box" style="margin-bottom:12px">
+    <div class="final-title" style="font-size:17px">${finalDiag.maladie}</div>
+    ${finalDiag.score != null ? `<div style="margin-top:4px;color:#15803d;font-size:13px">Score de confiance IA : ${Math.round(finalDiag.score)}%</div>` : ''}
+    <div style="font-size:12px;color:#16a34a;margin-top:2px">${validated ? 'Confirmé par le médecin' : 'Diagnostic alternatif proposé par le médecin'}</div>
+  </div>` : '<p style="color:#64748b">Non renseigné</p>'}
+  ${topAlt.length > 0 ? `
+  <p style="font-size:11px;color:#94a3b8;margin-top:10px;margin-bottom:6px">Autres hypothèses analysées par l'IA :</p>
+  ${topAlt.map(d => `
+  <div class="diag-card" style="opacity:0.6">
+    <div style="display:flex;justify-content:space-between">
+      <span class="diag-name" style="font-size:13px">${d.maladie}</span>
+      <span style="font-size:12px;color:#64748b">${formatScore(d.score)}</span>
     </div>
-    <div class="diag-meta">
-      <span>Urgence : ${d.urgence || 'faible'}</span>
-      ${d.examens_recommandes?.length ? `<span>Examens : ${d.examens_recommandes.slice(0, 3).join(', ')}</span>` : ''}
-    </div>
-    <div class="score-bar"><div class="score-fill" style="width:${Math.min(d.score, 100)}%"></div></div>
-  </div>`).join('')}
+  </div>`).join('')}` : ''}
 </div>
 
 ${finalDiag ? `
@@ -364,7 +457,7 @@ export function Consultation() {
   const [motif, setMotif] = useState('')
   const [symptoms, setSymptoms] = useState([])
   const [analyses, setAnalyses] = useState({})
-  const [age, setAge] = useState(0)
+  const [age, setAge] = useState('')
   const [sexe, setSexe] = useState('M')
 
   // Suggestions
@@ -494,15 +587,18 @@ export function Consultation() {
   const launchPreliminary = async () => {
     if (symptoms.length === 0) { setError('Ajoutez au moins un symptôme'); return }
     if (!motif.trim()) { setError('Le motif de consultation est requis'); return }
+    if (!selectedPatient && (age === 0 || age === '' || age === null)) {
+      setError("L'âge du patient est requis — entrez un âge valide ou recherchez un patient par code.")
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const res = await diagnosticApi.performDiagnostic({ age, sexe, symptomes: symptoms, analyses: {} })
       if (res.success) {
         const data = res.data?.data || res.data
-        // Backend may return success=true but empty diagnostics (insufficient symptoms)
         if (!data.diagnostics || data.diagnostics.length === 0) {
-          setError(data.message || 'Symptômes insuffisants pour établir un diagnostic. Ajoutez plus de symptômes.')
+          setError('Aucun résultat — vérifiez les symptômes saisis.')
           return
         }
         setPrelimResults(data)
@@ -562,7 +658,7 @@ export function Consultation() {
       if (res.success) {
         const data = res.data?.data || res.data
         if (!data.diagnostics || data.diagnostics.length === 0) {
-          setError(data.message || 'Aucun diagnostic concluant. Complétez les analyses ou ajoutez des symptômes.')
+          setError('Aucun résultat — vérifiez les données saisies.')
           return
         }
         setFinalResults(data)
@@ -586,15 +682,26 @@ export function Consultation() {
     setCustomAnalyseValue('')
   }
 
+  const _containsSexKeyword = (symptom, keywordSet) => {
+    const sNorm = symptom.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    for (const kw of keywordSet) {
+      const kwNorm = kw.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      if (sNorm === kwNorm) return true
+      // partial match: symptom contains a keyword fragment of 6+ chars
+      const parts = kwNorm.split(' ').filter(p => p.length >= 6)
+      if (parts.some(p => sNorm.includes(p))) return true
+    }
+    return false
+  }
+
   // Add symptom with sex-coherence check
   const addSymptom = (s) => {
     if (!s || symptoms.includes(s)) return
-    const sLower = s.toLowerCase().trim()
-    if (sexe === 'M' && FEMALE_ONLY_SYMPTOMS.has(sLower)) {
-      setSymptomWarning(`⚠ "${s}" est un symptôme typiquement féminin — vérifiez le sexe du patient.`)
+    if (sexe === 'M' && _containsSexKeyword(s, FEMALE_ONLY_SYMPTOMS)) {
+      setSymptomWarning(`⚠ "${s}" contient un terme féminin — vérifiez le sexe du patient.`)
       setTimeout(() => setSymptomWarning(''), 6000)
-    } else if (sexe === 'F' && MALE_ONLY_SYMPTOMS.has(sLower)) {
-      setSymptomWarning(`⚠ "${s}" est un symptôme typiquement masculin — vérifiez le sexe du patient.`)
+    } else if (sexe === 'F' && _containsSexKeyword(s, MALE_ONLY_SYMPTOMS)) {
+      setSymptomWarning(`⚠ "${s}" contient un terme masculin — vérifiez le sexe du patient.`)
       setTimeout(() => setSymptomWarning(''), 6000)
     } else {
       setSymptomWarning('')
@@ -683,7 +790,7 @@ export function Consultation() {
     setValidationChoice(null); setAlternativeDiag(''); setSaved(false)
     setSavedData(null); setError(''); setRecommendedAnalyses([])
     setSymptomWarning(''); setSessionRestored(false)
-    setSelectedPatient(null); setPatientCode(''); setAge(0); setSexe('M')
+    setSelectedPatient(null); setPatientCode(''); setAge(''); setSexe('M')
   }
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -762,7 +869,7 @@ export function Consultation() {
                     </div>
                   </div>
                   <button
-                    onClick={() => { setSelectedPatient(null); setPatientCode(''); setAge(0); setSexe('M') }}
+                    onClick={() => { setSelectedPatient(null); setPatientCode(''); setAge(''); setSexe('M') }}
                     className="text-slate-400 hover:text-slate-600 ml-2"
                   >
                     <X className="w-4 h-4" />
@@ -779,10 +886,11 @@ export function Consultation() {
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1.5">Âge</label>
                     <input
-                      type="number" min="0" max="120"
+                      type="number" min="1" max="120"
                       className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      placeholder="ex : 35"
                       value={age}
-                      onChange={e => setAge(Number(e.target.value))}
+                      onChange={e => setAge(e.target.value === '' ? '' : Number(e.target.value))}
                     />
                   </div>
                   <div>
@@ -959,68 +1067,96 @@ export function Consultation() {
                 {Object.keys(analyses).length > 0 ? (
                   <div className="border-t border-slate-100">
                     {/* Table header */}
-                    <div className="grid grid-cols-[1fr_120px_80px_90px_36px] gap-2 px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                      <span>Analyse</span>
-                      <span>Résultat</span>
-                      <span>Unité</span>
-                      <span className="text-center">Statut</span>
-                      <span />
+                    <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      <span>Analyse + résultat attendu</span>
+                      <span>Statut</span>
                     </div>
                     <div className="divide-y divide-slate-50">
                       {Object.entries(analyses).map(([name, value]) => {
                         const norm = findNorm(name)
-                        const abnormal = isAbnormal(name, value)
-                        const hasValue = value.trim() !== ''
+                        const guide = findGuide(name)
+                        const isQual = guide && guide.type !== 'numerique' && !norm
+                        const abnormal = isQual ? isQualitativeAbnormal(value) : isAbnormal(name, value)
+                        const hasValue = typeof value === 'string' ? value.trim() !== '' : value !== '' && value !== null && value !== undefined
                         return (
                           <div
                             key={name}
-                            className={`grid grid-cols-[1fr_120px_80px_90px_36px] gap-2 items-center px-4 py-3 transition-colors ${
+                            className={`px-4 py-3 transition-colors ${
                               abnormal ? 'bg-red-50/60' : 'hover:bg-slate-50/60'
                             }`}
                           >
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
-                              {norm && (
-                                <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-                                  {norm.min} – {norm.max}{norm.unit ? ` ${norm.unit}` : ''}
-                                </p>
-                              )}
+                            {/* Name + description */}
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-slate-800">{name}</p>
+                                {guide?.desc && (
+                                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{guide.desc}</p>
+                                )}
+                                {!guide?.desc && norm && (
+                                  <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+                                    Normale : {norm.min} – {norm.max}{norm.unit ? ` ${norm.unit}` : ''}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => { const n = { ...analyses }; delete n[name]; setAnalyses(n) }}
+                                className="flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
-                              placeholder="Valeur..."
-                              className={`w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
-                                abnormal
-                                  ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200 placeholder-red-300'
-                                  : 'border-slate-200 bg-white text-slate-800 focus:ring-blue-100 focus:border-blue-300'
-                              }`}
-                            />
-                            <span className="text-xs text-slate-400 truncate">
-                              {norm?.unit || '—'}
-                            </span>
-                            <div className="flex justify-center">
-                              {!hasValue ? (
-                                <span className="px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-400">
-                                  En attente
-                                </span>
-                              ) : abnormal ? (
-                                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-red-100 text-red-700">
-                                  Anormal
-                                </span>
+
+                            {/* Input row */}
+                            <div className="flex items-center gap-2">
+                              {isQual && guide.options ? (
+                                <select
+                                  value={value}
+                                  onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
+                                  className={`flex-1 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
+                                    abnormal
+                                      ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200'
+                                      : value && !abnormal
+                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 focus:ring-emerald-200'
+                                        : 'border-slate-200 bg-white text-slate-500 focus:ring-blue-100 focus:border-blue-300'
+                                  }`}
+                                >
+                                  <option value="">— Sélectionner le résultat —</option>
+                                  {guide.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
                               ) : (
-                                <span className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-700">
-                                  Normal
-                                </span>
+                                <input
+                                  type="text"
+                                  value={value}
+                                  onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
+                                  placeholder={norm ? `Entrez la valeur (normale : ${norm.min}–${norm.max} ${norm.unit || ''})` : 'Valeur...'}
+                                  className={`flex-1 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
+                                    abnormal
+                                      ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200 placeholder-red-300'
+                                      : 'border-slate-200 bg-white text-slate-800 focus:ring-blue-100 focus:border-blue-300'
+                                  }`}
+                                />
                               )}
+                              {norm && !isQual && (
+                                <span className="text-xs text-slate-400 shrink-0">{norm.unit}</span>
+                              )}
+                              <div className="shrink-0">
+                                {!hasValue ? (
+                                  <span className="px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-400 whitespace-nowrap">
+                                    En attente
+                                  </span>
+                                ) : abnormal ? (
+                                  <span className="px-2 py-1 rounded-md text-xs font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+                                    Anormal
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-700 whitespace-nowrap">
+                                    Normal
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <button
-                              onClick={() => { const n = { ...analyses }; delete n[name]; setAnalyses(n) }}
-                              className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
                           </div>
                         )
                       })}
@@ -1152,20 +1288,20 @@ export function Consultation() {
             </div>
           ) : (
             <>
-              {/* Final diagnostic results */}
-              <div className="bg-white rounded-xl border border-slate-200">
-                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              {/* Final diagnostic — 1 seule maladie à valider */}
+              <div className="bg-white rounded-xl border border-blue-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-blue-100 flex items-center justify-between bg-blue-50 rounded-t-xl">
                   <div>
-                    <h2 className="text-sm font-semibold text-slate-800">Diagnostic final affiné</h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Avec analyses biologiques — top {Math.min(currentDiags.length, 4)}</p>
+                    <h2 className="text-sm font-semibold text-slate-800">Diagnostic retenu par l'IA</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Le système a sélectionné la maladie la plus probable — à vous de valider</p>
                   </div>
                   <Badge variant="success" dot>Analyses intégrées</Badge>
                 </div>
-                <div className="p-4 space-y-2">
-                  {currentDiags.slice(0, 4).map((d, i) => (
-                    <DiagnosticCard key={i} result={d} index={i} />
-                  ))}
-                </div>
+                {topDiag && (
+                  <div className="p-4">
+                    <DiagnosticCard result={topDiag} index={0} />
+                  </div>
+                )}
               </div>
 
               {/* Validation */}

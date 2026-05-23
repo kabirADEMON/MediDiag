@@ -17,10 +17,15 @@ export const loginSchema = z.object({
   password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères'),
 })
 
+const nameField = z.string()
+  .min(2, 'Minimum 2 caractères')
+  .max(100, 'Maximum 100 caractères')
+  .regex(/^[a-zA-ZÀ-ÿ\s\-']+$/, 'Lettres uniquement (pas de chiffres ni symboles)')
+
 // Patient Schema
 export const patientSchema = z.object({
-  nom: requiredString,
-  prenom: requiredString,
+  nom: nameField,
+  prenom: nameField,
   date_naissance: z.string().min(1, 'Date de naissance requise'),
   sexe: z.enum(['M', 'F'], {
     errorMap: () => ({ message: 'Sélectionnez un sexe' }),
@@ -79,8 +84,8 @@ export const biologicalAnalysisSchema = z.object({
 
 // User Registration Schema
 export const registerSchema = z.object({
-  nom: requiredString,
-  prenom: requiredString,
+  nom: nameField,
+  prenom: nameField,
   email: requiredEmail,
   password: z.string()
     .min(8, 'Le mot de passe doit contenir au moins 8 caractères')

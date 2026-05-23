@@ -47,7 +47,7 @@ _SUBCLASS_FIELDS = """
 def _get_user_by_email(email: str) -> dict | None:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(_SUBCLASS_FIELDS + " WHERE u.email = ?", (email,))
+    cursor.execute(_SUBCLASS_FIELDS + " WHERE LOWER(u.email) = ?", (email.lower(),))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -242,7 +242,8 @@ async def create_user(
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data['email'],))
+        email_normalized = user_data['email'].lower()
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email_normalized,))
         if cursor.fetchone():
             conn.close()
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
@@ -252,7 +253,7 @@ async def create_user(
             """INSERT INTO users (email, password_hash, nom, prenom, role, specialite, must_change_password, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
             (
-                user_data['email'],
+                email_normalized,
                 hash_password(user_data['password']),
                 user_data['nom'],
                 user_data['prenom'],
@@ -438,7 +439,8 @@ async def register(user_data: dict):
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id FROM users WHERE email = ?", (user_data['email'],))
+        email_normalized = user_data['email'].lower()
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email_normalized,))
         if cursor.fetchone():
             conn.close()
             raise HTTPException(status_code=400, detail="Un utilisateur avec cet email existe déjà")
@@ -448,7 +450,7 @@ async def register(user_data: dict):
             """INSERT INTO users (email, password_hash, nom, prenom, role, specialite, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                user_data['email'],
+                email_normalized,
                 hash_password(user_data['password']),
                 user_data['nom'],
                 user_data['prenom'],
@@ -463,7 +465,7 @@ async def register(user_data: dict):
         conn.close()
 
         access_token = create_access_token(
-            data={"sub": user_data['email'], "user_id": new_id, "role": user_data['role']}
+            data={"sub": email_normalized, "user_id": new_id, "role": user_data['role']}
         )
 
         return SuccessResponse(
@@ -474,7 +476,7 @@ async def register(user_data: dict):
                 "token_type": "bearer",
                 "user": {
                     "id": new_id,
-                    "email": user_data['email'],
+                    "email": email_normalized,
                     "nom": user_data['nom'],
                     "prenom": user_data['prenom'],
                     "role": user_data['role'],

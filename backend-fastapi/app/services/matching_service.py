@@ -97,7 +97,10 @@ class MatchingEngine:
                 f"Removed {removed} sex-incompatible symptom(s) for sex={sex}: "
                 f"{[s for s in cleaned_patient_symptoms if _is_sex_incompatible(s, sex)]}"
             )
-        cleaned_patient_symptoms = compatible_symptoms or cleaned_patient_symptoms
+        if not compatible_symptoms:
+            logger.warning(f"All {len(cleaned_patient_symptoms)} symptom(s) are sex-incompatible for sex={sex} — aborting")
+            return []
+        cleaned_patient_symptoms = compatible_symptoms
 
         if not cleaned_patient_symptoms:
             logger.warning("No valid symptoms after sex filtering")
