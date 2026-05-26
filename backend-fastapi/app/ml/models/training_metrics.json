@@ -1,13 +1,13 @@
 {
-  "accuracy": 1.0,
-  "top3_accuracy": 1.0,
-  "top5_accuracy": 1.0,
-  "oob_score": 1.0,
-  "cv_mean": 1.0,
-  "cv_std": 0.0,
+  "accuracy": 0.9188333333333333,
+  "top3_accuracy": 0.9265,
+  "top5_accuracy": 0.9276666666666666,
+  "oob_score": 0.8977916666666667,
+  "cv_mean": 0.9302083333333334,
+  "cv_std": 0.01479782735554258,
   "n_root_classes": 106,
-  "n_training_samples": 30000,
-  "n_tfidf_features": 500,
+  "n_training_samples": 24000,
+  "n_tfidf_features": 1500,
   "n_numeric_features": 6,
-  "training_mode": "root_diseases"
+  "training_mode": "root_diseases_symptoms_only"
 }

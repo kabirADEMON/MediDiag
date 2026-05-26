@@ -38,10 +38,10 @@ class DiseaseMLModel:
 
     def __init__(self):
         self.vectorizer = TfidfVectorizer(
-            max_features=500,
+            max_features=1500,
             ngram_range=(1, 2),   # Bigrams pour capturer "douleur thoracique", "fièvre persistante"
             min_df=2,
-            max_df=0.90,
+            max_df=0.75,          # 0.75 garde les termes fréquents mais pas ubiquitaires
             sublinear_tf=True,
             norm='l2',
             analyzer='word',
@@ -132,11 +132,9 @@ class DiseaseMLModel:
                     n = np.random.randint(3, min(len(symptoms) + 1, 8))
                     selected = np.random.choice(symptoms, size=n, replace=False, p=weights).tolist()
 
+                # Symptômes uniquement — les analyses sont scorées séparément
+                # par scoring_service.py. Mélanger ici crée un décalage train/inférence.
                 text = ' '.join(selected)
-                if analyses:
-                    text += ' ' + analyses
-                if resultats:
-                    text += ' ' + resultats
 
                 # ── Génération de l'âge ────────────────────────────────────
                 # Mix uniforme (60%) + centré sur Age_Typique (40%)
@@ -178,35 +176,45 @@ class DiseaseMLModel:
 
     def train(self, csv_path: str) -> Dict:
         df = self.load_dataset(csv_path)
-        X_texts, X_nums, y_labels = self.generate_synthetic_cases(df, cases_per_row=30)
 
-        # Encodage des labels (racines)
-        y_encoded = self.label_encoder.fit_transform(y_labels)
+        # Split dataset rows AVANT la génération synthétique pour éviter la fuite
+        # train/test (sinon les 30 variantes d'une même ligne se retrouvent des deux côtés).
+        # Stratifié par Maladie_Racine pour que chaque racine soit dans train ET test.
+        from sklearn.model_selection import StratifiedShuffleSplit
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_idx, test_idx = next(sss.split(df, df['Maladie_Racine']))
+        df_train = df.iloc[train_idx]
+        df_test  = df.iloc[test_idx]
+
+        logger.info(f"Lignes train : {len(df_train)} | Lignes test : {len(df_test)}")
+
+        X_tr_texts, X_tr_nums, y_tr = self.generate_synthetic_cases(df_train, cases_per_row=30)
+        X_te_texts, X_te_nums, y_te = self.generate_synthetic_cases(df_test,  cases_per_row=30)
+
+        # Encodage des labels (racines) — fit sur TOUTES les classes connues
+        self.label_encoder.fit(df['Maladie_Racine'].unique())
         n_classes = len(self.label_encoder.classes_)
         logger.info(f"Classes cibles : {n_classes} racines")
 
-        # TF-IDF sur les textes de symptômes
-        logger.info("Vectorisation TF-IDF (symptoms + analyses)...")
-        X_tfidf = self.vectorizer.fit_transform(X_texts)
+        y_train = self.label_encoder.transform(y_tr)
+        y_test  = self.label_encoder.transform(y_te)
 
-        # Normalisation des features numériques
-        X_num_arr = np.array(X_nums)
-        # Fit scaler sur les 2 premières colonnes quantitatives (age_norm + sexe)
-        # Les colonnes binaires (tranches) n'ont pas besoin de scaling
-        self.scaler.fit(X_num_arr[:, :1])  # Uniquement age_norm
-        X_num_arr[:, 0] = self.scaler.transform(X_num_arr[:, :1]).flatten()
+        # TF-IDF (symptômes uniquement — pas d'analyses pour éviter décalage inférence)
+        logger.info("Vectorisation TF-IDF (symptômes uniquement)...")
+        X_tr_tfidf = self.vectorizer.fit_transform(X_tr_texts)
+        X_te_tfidf = self.vectorizer.transform(X_te_texts)
 
-        X_combined = hstack([X_tfidf, csr_matrix(X_num_arr)])
-        logger.info(f"Features totales : {X_combined.shape[1]} "
-                    f"(TF-IDF: {X_tfidf.shape[1]}, numériques: {X_num_arr.shape[1]})")
+        # Normalisation age_norm uniquement (colonne 0)
+        X_tr_num = np.array(X_tr_nums)
+        X_te_num = np.array(X_te_nums)
+        self.scaler.fit(X_tr_num[:, :1])
+        X_tr_num[:, 0] = self.scaler.transform(X_tr_num[:, :1]).flatten()
+        X_te_num[:, 0] = self.scaler.transform(X_te_num[:, :1]).flatten()
 
-        # Split stratifié
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_combined, y_encoded,
-            test_size=0.2,
-            random_state=42,
-            stratify=y_encoded,
-        )
+        X_train = hstack([X_tr_tfidf, csr_matrix(X_tr_num)])
+        X_test  = hstack([X_te_tfidf, csr_matrix(X_te_num)])
+        logger.info(f"Features totales : {X_train.shape[1]} "
+                    f"(TF-IDF: {X_tr_tfidf.shape[1]}, numériques: {X_tr_num.shape[1]})")
         logger.info(f"Train : {X_train.shape[0]} | Test : {X_test.shape[0]}")
 
         # Entraînement
@@ -217,15 +225,15 @@ class DiseaseMLModel:
         if oob:
             logger.info(f"OOB score : {oob:.2%}")
 
-        # Évaluation
-        y_pred = self.classifier.predict(X_test)
+        # Évaluation sur lignes tenues hors entraînement (vraie généralisation)
+        y_pred  = self.classifier.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
 
         y_proba = self.classifier.predict_proba(X_test)
         top3 = np.mean([y_test[i] in np.argsort(y_proba[i])[-3:] for i in range(len(y_test))])
         top5 = np.mean([y_test[i] in np.argsort(y_proba[i])[-5:] for i in range(len(y_test))])
 
-        # Cross-validation (5-fold)
+        # Cross-validation (5-fold) sur le train seulement
         logger.info("Cross-validation 5-fold...")
         cv = cross_val_score(self.classifier, X_train, y_train, cv=5, scoring='accuracy', n_jobs=-1)
 
@@ -237,16 +245,16 @@ class DiseaseMLModel:
             'cv_mean': float(cv.mean()),
             'cv_std': float(cv.std()),
             'n_root_classes': n_classes,
-            'n_training_samples': len(X_texts),
-            'n_tfidf_features': int(X_tfidf.shape[1]),
-            'n_numeric_features': X_num_arr.shape[1],
-            'training_mode': 'root_diseases',
+            'n_training_samples': len(X_tr_texts),
+            'n_tfidf_features': int(X_tr_tfidf.shape[1]),
+            'n_numeric_features': X_tr_num.shape[1],
+            'training_mode': 'root_diseases_symptoms_only',
         }
 
-        logger.info(f"Accuracy     : {accuracy:.2%}")
-        logger.info(f"Top-3        : {top3:.2%}")
-        logger.info(f"Top-5        : {top5:.2%}")
-        logger.info(f"CV           : {cv.mean():.2%} ± {cv.std():.2%}")
+        logger.info(f"Accuracy (held-out) : {accuracy:.2%}")
+        logger.info(f"Top-3               : {top3:.2%}")
+        logger.info(f"Top-5               : {top5:.2%}")
+        logger.info(f"CV (train)          : {cv.mean():.2%} ± {cv.std():.2%}")
 
         return metrics
 

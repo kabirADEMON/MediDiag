@@ -106,7 +106,7 @@ class HybridDiagnosticService:
             # Step 4: Build diagnostic results
             diagnostic_results = []
             
-            for disease in combined_results[:top_n]:
+            for disease in combined_results:
                 # Calculate age compatibility
                 age_compatible, age_score = self.matching_engine.calculate_age_compatibility(
                     request.age,
