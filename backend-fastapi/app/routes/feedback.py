@@ -1,4 +1,4 @@
-"""
+﻿"""
 Diagnostic feedback routes - Doctor validation of AI diagnosis
 """
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/feedback", tags=["Feedback"])
 
 
 @router.post("/diagnostic")
-async def submit_diagnostic_feedback(
+def submit_diagnostic_feedback(
     feedback_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -96,7 +96,7 @@ async def submit_diagnostic_feedback(
 
 
 @router.get("/stats")
-async def get_feedback_stats(
+def get_feedback_stats(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """

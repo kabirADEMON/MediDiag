@@ -1,4 +1,4 @@
-"""
+﻿"""
 Consultations routes - Consultation management endpoints
 """
 from fastapi import APIRouter, HTTPException, status
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/consultations", tags=["Consultations"])
 
 
 @router.post("/")
-async def create_consultation(consultation_data: dict):
+def create_consultation(consultation_data: dict):
     """
     Create new consultation with diagnostic results
     
@@ -216,7 +216,7 @@ async def create_consultation(consultation_data: dict):
 
 
 @router.get("/")
-async def get_consultations(
+def get_consultations(
     skip: int = 0,
     limit: int = 10,
     patient_id: Optional[int] = None
@@ -293,7 +293,7 @@ async def get_consultations(
 
 
 @router.get("/{consultation_id}")
-async def get_consultation_by_id(consultation_id: int):
+def get_consultation_by_id(consultation_id: int):
     """
     Get consultation by ID with full details
     
@@ -355,7 +355,7 @@ async def get_consultation_by_id(consultation_id: int):
 
 
 @router.get("/patient/{patient_id}")
-async def get_consultations_by_patient(patient_id: int):
+def get_consultations_by_patient(patient_id: int):
     """
     Get all consultations for a specific patient
     
@@ -365,11 +365,11 @@ async def get_consultations_by_patient(patient_id: int):
     **Returns:**
     - List of patient's consultations
     """
-    return await get_consultations(patient_id=patient_id, limit=100)
+    return get_consultations(patient_id=patient_id, limit=100)
 
 
 @router.delete("/{consultation_id}")
-async def delete_consultation(consultation_id: int):
+def delete_consultation(consultation_id: int):
     """
     Delete consultation
     

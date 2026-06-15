@@ -12,6 +12,10 @@ from app.config import settings
 from app.routes import diagnostic, maladies, patients, auth, metadata, consultations
 from app.routes import diagnostics_history, vitals, feedback
 from app.services.preprocessing_service import get_dataset_loader
+from app.services.exam_classifier_service import get_exam_classifier
+from app.services.symptom_normalizer_service import get_symptom_normalizer
+from app.ml.predictor import get_ml_predictor
+from app.database.mysql_connection import get_connection as _db_get_connection
 
 # Configure logging
 logging.basicConfig(
@@ -71,7 +75,41 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Failed to load dataset: {e}")
         raise
-    
+
+    # Initialize exam classifier and enrich from dataset
+    try:
+        classifier = get_exam_classifier()
+        classifier.enrich_from_dataset(dataset_loader.df)
+        logger.info("✅ Exam classifier ready")
+    except Exception as e:
+        logger.warning(f"⚠️ Exam classifier init failed (non-fatal): {e}")
+
+    # Initialize symptom normalizer vocabulary from dataset
+    try:
+        normalizer = get_symptom_normalizer()
+        normalizer.build_vocabulary(dataset_loader.df)
+        logger.info("✅ Symptom normalizer ready")
+    except Exception as e:
+        logger.warning(f"⚠️ Symptom normalizer init failed (non-fatal): {e}")
+
+    # Pre-load ML model so the first user request is not penalised
+    try:
+        ml = get_ml_predictor()
+        if not ml.is_loaded:
+            ml.load_model()
+        logger.info("✅ ML model pre-loaded")
+    except Exception as e:
+        logger.warning(f"⚠️ ML model pre-load failed (non-fatal): {e}")
+
+    # Warm MySQL connection pool (avoids ~300ms penalty on first DB request)
+    try:
+        conn = _db_get_connection()
+        conn.close()
+        logger.info("✅ MySQL pool warmed")
+    except Exception as e:
+        logger.warning(f"⚠️ MySQL pool warm-up failed (non-fatal): {e}")
+
+
     logger.info("✅ API is ready to accept requests")
 
 

@@ -9,6 +9,8 @@ import joblib
 import numpy as np
 from scipy.sparse import hstack, csr_matrix
 
+from app.services.symptom_normalizer_service import get_symptom_normalizer
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,12 @@ class MLPredictor:
                 return []
 
         try:
-            symptom_text = ' '.join([s.lower().strip() for s in symptoms if s])
+            # Normalise symptoms to canonical dataset vocabulary before
+            # TF-IDF vectorisation so the model receives the same terms it
+            # was trained on, even when the clinician uses informal language.
+            normalizer = get_symptom_normalizer()
+            canonical_symptoms, _ = normalizer.normalize_list(symptoms)
+            symptom_text = ' '.join([s.lower().strip() for s in canonical_symptoms if s])
 
             if not symptom_text:
                 return []

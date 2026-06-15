@@ -41,9 +41,10 @@ def _apply_anti_anchoring(
                 VarianteResult(maladie=r.maladie, score=r.score, urgence=r.urgence)
             )
 
-    # Return between min_results and max_results distinct roots
-    n_show = min(max_results, max(min_results, len(clusters)))
+    # How many distinct roots to show (capped at max_results)
+    n_show = min(max_results, len(clusters))
     top_roots = list(clusters.keys())[:n_show]
+    shown_roots: set[str] = set(top_roots)
 
     final: List[DiagnosticResult] = []
     for root in top_roots:
@@ -62,6 +63,19 @@ def _apply_anti_anchoring(
             ))
         else:
             final.append(winner)
+
+    # Guarantee at least min_results entries: if there are not enough distinct
+    # roots in the clusters already shown, pull the next best candidates from
+    # the full sorted input list (which already contains diversity fallbacks
+    # added by match_diseases).
+    if len(final) < min_results:
+        for r in results:
+            if len(final) >= min_results:
+                break
+            root = r.maladie.split('(')[0].strip()
+            if root not in shown_roots:
+                final.append(r)
+                shown_roots.add(root)
 
     return final
 

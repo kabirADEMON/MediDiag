@@ -1,4 +1,4 @@
-"""
+﻿"""
 Diagnostics history routes - List saved diagnostics from consultations
 """
 from fastapi import APIRouter, HTTPException, status, Query
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/diagnostics", tags=["Diagnostics History"])
 
 
 @router.get("/")
-async def get_all_diagnostics(
+def get_all_diagnostics(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     patient_id: Optional[int] = None
@@ -100,8 +100,37 @@ async def get_all_diagnostics(
         )
 
 
+@router.get("/top-maladies")
+def get_top_maladies(limit: int = Query(7, ge=1, le=20)):
+    """Top N most frequently diagnosed diseases from saved diagnostics."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT resultats FROM diagnostics WHERE resultats IS NOT NULL AND resultats != '[]'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        from collections import Counter
+        counter = Counter()
+        for row in rows:
+            try:
+                resultats = json.loads(row["resultats"] or "[]")
+                if resultats and isinstance(resultats, list):
+                    maladie = resultats[0].get("maladie", "")
+                    if maladie and maladie != "Inconnu":
+                        counter[maladie] += 1
+            except Exception:
+                pass
+
+        top = [{"maladie": m, "total": c} for m, c in counter.most_common(limit)]
+        return SuccessResponse(success=True, message=f"{len(top)} maladies", data=top)
+    except Exception as e:
+        logger.error(f"Error getting top maladies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/weekly")
-async def get_weekly_stats():
+def get_weekly_stats():
     """
     Get consultations and diagnostics counts for the last 7 days
     """
@@ -154,7 +183,7 @@ async def get_weekly_stats():
 
 
 @router.get("/stats")
-async def get_diagnostics_global_stats():
+def get_diagnostics_global_stats():
     """
     Get global application statistics (patients, consultations, diagnostics counts)
 
@@ -185,6 +214,12 @@ async def get_diagnostics_global_stats():
         )
         today_consultations = cursor.fetchone()[0]
 
+        cursor.execute(
+            "SELECT COUNT(*) FROM patients p WHERE NOT EXISTS "
+            "(SELECT 1 FROM consultations c WHERE c.patient_id = p.id)"
+        )
+        patients_en_attente = cursor.fetchone()[0]
+
         conn.close()
 
         return SuccessResponse(
@@ -195,7 +230,7 @@ async def get_diagnostics_global_stats():
                 "totalConsultations": total_consultations,
                 "totalDiagnostics": total_diagnostics,
                 "todayConsultations": today_consultations,
-                "activePatients": total_patients,
+                "patientsEnAttente": patients_en_attente,
             }
         )
     except Exception as e:

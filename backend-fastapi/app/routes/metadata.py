@@ -1,4 +1,4 @@
-"""
+﻿"""
 Metadata routes - Get symptoms and analyses from dataset
 """
 from fastapi import APIRouter, HTTPException, status, Query
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/metadata", tags=["Metadata"])
 
 
 @router.get("/symptoms")
-async def get_all_symptoms(search: Optional[str] = Query(None, min_length=1)):
+def get_all_symptoms(search: Optional[str] = Query(None, min_length=1)):
     """
     Get all unique symptoms from the dataset
     
@@ -73,7 +73,7 @@ async def get_all_symptoms(search: Optional[str] = Query(None, min_length=1)):
 
 
 @router.get("/analyses")
-async def get_all_analyses(search: Optional[str] = Query(None, min_length=1)):
+def get_all_analyses(search: Optional[str] = Query(None, min_length=1)):
     """
     Get all unique biological analyses with their possible results from the dataset
     
@@ -151,7 +151,7 @@ async def get_all_analyses(search: Optional[str] = Query(None, min_length=1)):
 
 
 @router.get("/symptoms/popular")
-async def get_popular_symptoms(limit: int = Query(20, ge=1, le=100)):
+def get_popular_symptoms(limit: int = Query(20, ge=1, le=100)):
     """
     Get most popular symptoms from the dataset
     
@@ -210,7 +210,7 @@ async def get_popular_symptoms(limit: int = Query(20, ge=1, le=100)):
 
 
 @router.get("/analyses/popular")
-async def get_popular_analyses(limit: int = Query(20, ge=1, le=100)):
+def get_popular_analyses(limit: int = Query(20, ge=1, le=100)):
     """
     Get most popular analyses from the dataset
     

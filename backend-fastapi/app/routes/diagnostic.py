@@ -15,6 +15,7 @@ from app.models.response_models import (
 from app.services.diagnostic_service import get_diagnostic_service
 from app.services.hybrid_diagnostic_service import get_hybrid_diagnostic_service
 from app.services.preprocessing_service import get_dataset_loader
+from app.services.exam_classifier_service import get_exam_classifier
 from app.utils.auth_helper import require_role
 
 security = HTTPBearer(auto_error=False)
@@ -154,19 +155,22 @@ async def get_recommended_examinations(request: DiagnosticRequest, credentials: 
         
         logger.info(f"✅ Found {len(sorted_analyses)} unique analyses")
         
-        # Build response with details
+        # Build response with details + classification metadata
         total_diseases = len(result.diagnostics)
+        classifier = get_exam_classifier()
         recommended_analyses = []
         for analysis_name, count in sorted_analyses[:15]:  # Top 15 analyses
             diseases = analyses_by_disease[analysis_name]
             pct = round(count / total_diseases * 100) if total_diseases > 0 else 0
+            meta = classifier.classify(analysis_name)
             recommended_analyses.append({
                 "name": analysis_name,
                 "frequency": count,
                 "recommended_by": len(diseases),
                 "percentage": pct,
-                "diseases": [d["maladie"] for d in diseases[:3]],  # Top 3 diseases
-                "priority": "high" if count >= 5 else "medium" if count >= 3 else "low"
+                "diseases": [d["maladie"] for d in diseases[:3]],
+                "priority": "high" if count >= 5 else "medium" if count >= 3 else "low",
+                **meta,
             })
         
         return SuccessResponse(

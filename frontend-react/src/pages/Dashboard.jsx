@@ -3,17 +3,13 @@ import { Link } from 'react-router-dom'
 import {
   Users,
   Stethoscope,
-  FileText,
-  Activity,
   AlertCircle,
   Calendar,
   UserCog,
-  ClipboardList,
   Shield,
   Plus,
   ChevronRight,
   ArrowUpRight,
-  Dot,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -27,7 +23,6 @@ import {
   Bar,
 } from 'recharts'
 import { useAuth } from '@/features/auth/context/AuthContext'
-import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import * as patientApi from '@/features/patients/api/patientApi'
 import { get } from '@/api/axios'
@@ -85,6 +80,7 @@ function KpiCard({ title, value, icon: Icon, sub, link, index = 0 }) {
 }
 
 
+
 export function Dashboard() {
   const { user } = useAuth()
   const role = user?.role || 'medecin'
@@ -95,9 +91,11 @@ export function Dashboard() {
     totalDiagnostics: 0,
     todayConsultations: 0,
     totalUsers: 0,
+    patientsEnAttente: 0,
   })
   const [recentPatients, setRecentPatients] = useState([])
   const [weekData, setWeekData] = useState([])
+  const [topMaladies, setTopMaladies] = useState([])
 
   useEffect(() => { loadDashboardData() }, [])
 
@@ -108,10 +106,11 @@ export function Dashboard() {
         get('/diagnostics/stats'),
         patientApi.getPatients({ limit: 5 }),
         get('/diagnostics/weekly'),
+        get('/diagnostics/top-maladies'),
       ]
       if (role === 'administrateur') requests.push(get('/auth/users'))
 
-      const [statsRes, patientsRes, weeklyRes, usersRes] = await Promise.all(requests)
+      const [statsRes, patientsRes, weeklyRes, topRes, usersRes] = await Promise.all(requests)
 
       if (statsRes.success) {
         const d = statsRes.data?.data || statsRes.data
@@ -124,6 +123,10 @@ export function Dashboard() {
       if (weeklyRes.success) {
         const d = weeklyRes.data?.data || weeklyRes.data
         setWeekData(Array.isArray(d) ? d : [])
+      }
+      if (topRes?.success) {
+        const d = topRes.data?.data || topRes.data
+        setTopMaladies(Array.isArray(d) ? d : [])
       }
       if (usersRes?.success) {
         const d = usersRes.data?.data || usersRes.data
@@ -207,31 +210,14 @@ export function Dashboard() {
       ? [
           { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients' },
           { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées' },
-          { title: 'Diagnostics IA', value: stats.totalDiagnostics, icon: FileText, sub: 'Générés par IA', link: '/diagnostics' },
+          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients' },
           { title: 'Utilisateurs', value: stats.totalUsers, icon: UserCog, sub: 'Comptes actifs', link: '/admin/users' },
         ]
       : [
           { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients' },
           { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées', link: '/consultation' },
-          { title: 'Diagnostics IA', value: stats.totalDiagnostics, icon: FileText, sub: 'Générés par IA', link: '/diagnostics' },
+          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients' },
           { title: "Aujourd'hui", value: stats.todayConsultations, icon: Calendar, sub: 'Consultations du jour' },
-        ]
-
-  const quickActions =
-    role === 'infirmier'
-      ? [
-          { label: 'Suivi des patients', href: '/nurse/suivi', icon: ClipboardList, variant: 'primary' },
-          { label: 'Ajouter un patient', href: '/patients/new', icon: Plus, variant: 'secondary' },
-        ]
-      : role === 'administrateur'
-      ? [
-          { label: 'Gérer les utilisateurs', href: '/admin/users', icon: UserCog, variant: 'primary' },
-          { label: 'Ajouter un patient', href: '/patients/new', icon: Plus, variant: 'secondary' },
-        ]
-      : [
-          { label: 'Nouvelle consultation', href: '/consultation', icon: Stethoscope, variant: 'primary' },
-          { label: 'Ajouter un patient', href: '/patients/new', icon: Plus, variant: 'secondary' },
-          { label: 'Voir les diagnostics', href: '/diagnostics', icon: FileText, variant: 'ghost' },
         ]
 
   return (
@@ -377,44 +363,50 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Quick actions */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-800">Actions rapides</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Accès direct aux fonctions principales</p>
+        {/* Top maladies */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <div className="mb-5">
+            <h2 className="text-sm font-semibold text-slate-800">Top maladies diagnostiquées</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Pathologies les plus fréquentes — données réelles</p>
           </div>
-          <div className="p-4 space-y-2">
-            {quickActions.map((action, i) => {
-              const Icon = action.icon
-              const isPrimary = action.variant === 'primary'
-              return (
-                <Link key={action.label} to={action.href} className="block">
-                  <div className={cn(
-                    'flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-sm font-medium transition-all duration-150 cursor-pointer',
-                    isPrimary
-                      ? 'bg-blue-600 text-white hover:bg-blue-700 hover:-translate-y-0.5 shadow-sm shadow-blue-100'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-100'
-                  )}>
-                    <div className={cn(
-                      'flex items-center justify-center w-8 h-8 rounded-lg shrink-0',
-                      isPrimary ? 'bg-white/20' : 'bg-white border border-slate-200'
-                    )}>
-                      <Icon className={cn('w-4 h-4', isPrimary ? 'text-white' : 'text-slate-600')} />
-                    </div>
-                    <span className="flex-1">{action.label}</span>
-                    <ChevronRight className={cn('w-4 h-4 shrink-0', isPrimary ? 'text-white/70' : 'text-slate-400')} />
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-
-          <div className="mx-4 mb-4 flex items-start gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-100">
-            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700 leading-relaxed">
-              Outil d'aide à la décision clinique — ne remplace pas l'évaluation d'un professionnel de santé.
-            </p>
-          </div>
+          {topMaladies.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <p className="text-sm text-slate-400">Aucun diagnostic enregistré pour l'instant</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(topMaladies.length * 34, 120)}>
+              <BarChart
+                data={topMaladies}
+                layout="vertical"
+                margin={{ top: 0, right: 24, left: 0, bottom: 0 }}
+                barSize={14}
+              >
+                <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <YAxis
+                  type="category"
+                  dataKey="maladie"
+                  width={140}
+                  tick={{ fill: '#475569', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={v => v.length > 18 ? v.slice(0, 17) + '…' : v}
+                />
+                <Tooltip
+                  cursor={{ fill: '#f8fafc' }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+                        <p className="font-semibold text-slate-700 mb-0.5">{payload[0]?.payload?.maladie}</p>
+                        <p className="text-blue-600 font-bold">{payload[0].value} cas</p>
+                      </div>
+                    )
+                  }}
+                />
+                <Bar dataKey="total" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

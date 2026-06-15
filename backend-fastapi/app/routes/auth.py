@@ -1,4 +1,4 @@
-"""
+﻿"""
 Authentication routes - User authentication and authorization
 """
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -82,7 +82,7 @@ def _insert_subclass(cursor, user_id: int, role: str, data: dict):
 
 
 @router.post("/login")
-async def login(credentials: dict):
+def login(credentials: dict):
     try:
         email = credentials.get('email')
         password = credentials.get('password')
@@ -133,12 +133,12 @@ async def login(credentials: dict):
 
 
 @router.post("/logout")
-async def logout():
+def logout():
     return SuccessResponse(success=True, message="Déconnexion réussie", data={})
 
 
 @router.post("/refresh")
-async def refresh_token(token_data: dict):
+def refresh_token(token_data: dict):
     try:
         token = token_data.get('refresh_token')
         if not token:
@@ -174,7 +174,7 @@ async def refresh_token(token_data: dict):
 
 
 @router.get("/me")
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         try:
             payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
@@ -200,7 +200,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 @router.get("/users")
-async def get_all_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_all_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         if payload.get("role") != "administrateur":
@@ -224,7 +224,7 @@ async def get_all_users(credentials: HTTPAuthorizationCredentials = Depends(secu
 
 
 @router.post("/users")
-async def create_user(
+def create_user(
     user_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -287,7 +287,7 @@ async def create_user(
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def delete_user(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         if payload.get("role") != "administrateur":
@@ -314,7 +314,7 @@ async def delete_user(user_id: int, credentials: HTTPAuthorizationCredentials = 
 
 
 @router.patch("/users/{user_id}/toggle-active")
-async def toggle_user_active(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def toggle_user_active(user_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         if payload.get("role") != "administrateur":
@@ -346,7 +346,7 @@ async def toggle_user_active(user_id: int, credentials: HTTPAuthorizationCredent
 
 
 @router.put("/me")
-async def update_profile(
+def update_profile(
     profile_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -390,7 +390,7 @@ async def update_profile(
 
 
 @router.put("/me/password")
-async def change_password(
+def change_password(
     pwd_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -429,7 +429,7 @@ async def change_password(
 
 
 @router.post("/register")
-async def register(user_data: dict):
+def register(user_data: dict):
     try:
         required_fields = ['email', 'password', 'nom', 'prenom', 'role']
         for field in required_fields:

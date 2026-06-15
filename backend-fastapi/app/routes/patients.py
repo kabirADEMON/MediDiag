@@ -20,9 +20,9 @@ router = APIRouter(prefix="/patients", tags=["Patients"])
 
 
 @router.get("/")
-async def get_patients(
+def get_patients(
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=500),
     search: Optional[str] = None
 ):
     """
@@ -51,7 +51,7 @@ async def get_patients(
                   CASE WHEN EXISTS(SELECT 1 FROM consultations c WHERE c.patient_id = p.id) THEN 1 ELSE 0 END as a_ete_consulte
                 FROM patients p
                 WHERE p.nom LIKE ? OR p.prenom LIKE ? OR p.email LIKE ? OR p.code_patient LIKE ?
-                ORDER BY p.created_at ASC
+                ORDER BY p.id DESC
                 LIMIT ? OFFSET ?
             """
             cursor.execute(query, (search_pattern, search_pattern, search_pattern, search_pattern, limit, skip))
@@ -70,7 +70,7 @@ async def get_patients(
                 SELECT p.*,
                   CASE WHEN EXISTS(SELECT 1 FROM consultations c WHERE c.patient_id = p.id) THEN 1 ELSE 0 END as a_ete_consulte
                 FROM patients p
-                ORDER BY p.created_at ASC
+                ORDER BY p.id DESC
                 LIMIT ? OFFSET ?
             """
             cursor.execute(query, (limit, skip))
@@ -101,7 +101,7 @@ async def get_patients(
 
 
 @router.get("/{patient_id}")
-async def get_patient_by_id(patient_id: int):
+def get_patient_by_id(patient_id: int):
     """
     Get patient by ID
     
@@ -140,7 +140,7 @@ async def get_patient_by_id(patient_id: int):
 
 
 @router.post("/")
-async def create_patient(patient_data: dict):
+def create_patient(patient_data: dict):
     """
     Create new patient
     
@@ -237,7 +237,7 @@ async def create_patient(patient_data: dict):
 
 
 @router.put("/{patient_id}")
-async def update_patient(patient_id: int, patient_data: dict):
+def update_patient(patient_id: int, patient_data: dict):
     """
     Update patient information
     
@@ -313,7 +313,7 @@ async def update_patient(patient_id: int, patient_data: dict):
 
 
 @router.delete("/{patient_id}")
-async def delete_patient(patient_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def delete_patient(patient_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Delete patient
     
@@ -359,7 +359,7 @@ async def delete_patient(patient_id: int, credentials: HTTPAuthorizationCredenti
 
 
 @router.get("/search/{query}")
-async def search_patients(query: str):
+def search_patients(query: str):
     """
     Search patients by name or email
     
@@ -395,7 +395,7 @@ async def search_patients(query: str):
 
 
 @router.get("/code/{code}")
-async def get_patient_by_code(code: str):
+def get_patient_by_code(code: str):
     """
     Get patient by unique code
     
