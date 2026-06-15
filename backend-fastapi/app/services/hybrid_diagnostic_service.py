@@ -4,6 +4,7 @@ Hybrid Diagnostic Service - Combines Fuzzy Matching + Machine Learning
 from typing import List, Dict, Optional
 import logging
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from app.models.request_models import DiagnosticRequest
 from app.models.response_models import DiagnosticResult, DiagnosticResponse
@@ -30,10 +31,11 @@ class HybridDiagnosticService:
         self.recommendation_service = get_recommendation_service()
         self.clinical_scoring = get_clinical_scoring_manager()
         self.ml_predictor = get_ml_predictor()
-        
+
         # Weights for hybrid scoring
         self.ML_WEIGHT = 0.70  # 70% ML
         self.FUZZY_WEIGHT = 0.30  # 30% Fuzzy matching
+
     
     def perform_diagnostic(
         self,
@@ -57,17 +59,42 @@ class HybridDiagnosticService:
             logger.info(f"Symptoms: {request.symptomes}")
             logger.info(f"ML enabled: {use_ml}")
             
-            # Step 1: Get fuzzy matching results — 30 candidates minimum so
-            # anti-anchoring can always surface at least 3 distinct roots
-            fuzzy_results = self.matching_engine.match_diseases(
-                age=request.age,
-                sex=request.sexe,
-                symptoms=request.symptomes,
-                top_n=30,
-                temporalite=request.temporalite,
-                symptomes_absents=request.symptomes_absents,
-            )
-            
+            # Step 1+2: Fuzzy matching AND ML prediction run in parallel.
+            # They are fully independent — no need to wait for one before the other.
+            POOL_SIZE = 100 if request.analyses else 30
+
+            fuzzy_results = []
+            ml_results = []
+
+            def _run_fuzzy():
+                return self.matching_engine.match_diseases(
+                    age=request.age,
+                    sex=request.sexe,
+                    symptoms=request.symptomes,
+                    top_n=POOL_SIZE,
+                    temporalite=request.temporalite,
+                    symptomes_absents=request.symptomes_absents,
+                )
+
+            def _run_ml():
+                if not (use_ml and self.ml_predictor.is_loaded):
+                    return []
+                return self.ml_predictor.predict(
+                    symptoms=request.symptomes,
+                    age=request.age,
+                    sex=request.sexe,
+                    top_n=POOL_SIZE,
+                    min_probability=0.01,
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f_fuzzy = pool.submit(_run_fuzzy)
+                f_ml    = pool.submit(_run_ml)
+                fuzzy_results = f_fuzzy.result()
+                ml_results    = f_ml.result()
+
+            logger.info(f"Fuzzy: {len(fuzzy_results)} | ML: {len(ml_results)} predictions")
+
             if not fuzzy_results:
                 logger.warning("No matching diseases found")
                 return DiagnosticResponse(
@@ -81,21 +108,6 @@ class HybridDiagnosticService:
                     }
                 )
             
-            # Step 2: Get ML predictions (if enabled and available)
-            ml_results = []
-            if use_ml and self.ml_predictor.is_loaded:
-                logger.info("Getting ML predictions with age and sex...")
-                ml_results = self.ml_predictor.predict(
-                    symptoms=request.symptomes,
-                    age=request.age,
-                    sex=request.sexe,
-                    top_n=30,
-                    min_probability=0.01
-                )
-                logger.info(f"ML returned {len(ml_results)} predictions")
-            else:
-                logger.info("ML not used, using fuzzy matching only")
-            
             # Step 3: Combine results (Hybrid scoring)
             combined_results = self._combine_results(
                 fuzzy_results,
@@ -103,25 +115,24 @@ class HybridDiagnosticService:
                 request
             )
             
-            # Step 4: Build diagnostic results
-            diagnostic_results = []
-            
+            # Step 4: Build diagnostic results, tracking raw (uncapped) scores
+            # so that sorting is not frozen by the 100-point cap.
+            raw_scored: list[tuple[float, DiagnosticResult]] = []
+
             for disease in combined_results:
-                # Calculate age compatibility
+                # Age / sex compatibility
                 age_compatible, age_score = self.matching_engine.calculate_age_compatibility(
                     request.age,
                     disease['age_min'],
                     disease['age_max'],
                     disease['age_typical']
                 )
-                
-                # Calculate sex compatibility
                 sex_compatible, sex_score = self.matching_engine.calculate_sex_compatibility(
                     request.sexe,
                     disease['sex_predominant']
                 )
-                
-                # Calculate analyses match score if analyses provided
+
+                # Analyses match score
                 analyses_score = 0.0
                 if request.analyses:
                     analyses_score = self.scoring_service.calculate_analyses_match_score(
@@ -131,69 +142,80 @@ class HybridDiagnosticService:
                         analyses_anomalies=request.analyses_anomalies or [],
                     )
                     logger.info(f"  📊 {disease['disease_name']}: analyses_score={analyses_score:.1f}%")
-                
-                # Use hybrid score as base
+
+                # Base = hybrid score (ML 70% + fuzzy 30%)
                 final_score = disease['hybrid_score']
 
-                # Analyses boost
+                # Analyses boost — intentionally NOT capped here so that a
+                # lower-ranked disease can overtake the preliminary leader.
                 if request.analyses and analyses_score > 0:
-                    analyses_boost = (analyses_score / 100) * 30
-                    final_score = min(100, final_score + analyses_boost)
-                    logger.info(f"  ✨ {disease['disease_name']}: boosted to {final_score:.1f}% (analyses match: {analyses_score:.1f}%)")
+                    analyses_boost = (analyses_score / 100) * 60
+                    final_score += analyses_boost
+                    logger.info(
+                        f"  ✨ {disease['disease_name']}: raw={final_score:.1f}% "
+                        f"(analyses match: {analyses_score:.1f}%)"
+                    )
 
-                # Exclusionary logic: key mandatory symptom absent → moderate malus
+                # Exclusionary malus: key symptom absent
                 if disease.get('key_symptom_absent', False):
                     final_score = round(final_score * 0.5, 2)
-                    logger.info(f"  ✂ Exclusionary malus '{disease['disease_name']}': key symptom absent → {final_score}")
+                    logger.info(f"  ✂ Exclusionary malus '{disease['disease_name']}': → {final_score}")
 
-                # ScoreCliniqueManager: validated clinical score boost
+                # ScoreCliniqueManager validated clinical boost
                 clinical_boost = self.clinical_scoring.compute_boost(
                     disease_name=disease['disease_name'],
                     symptoms=request.symptomes,
                     age=request.age,
                 )
                 if clinical_boost > 0:
-                    final_score = min(100.0, round(final_score + clinical_boost, 2))
+                    final_score = round(final_score + clinical_boost, 2)
                     logger.info(f"  ⬆ Clinical boost '{disease['disease_name']}': +{clinical_boost} → {final_score}")
-                
-                # Determine urgency level
+
+                raw_score = round(final_score, 2)
+
                 urgency = self.scoring_service.calculate_urgency_level(
                     disease['disease_name'],
-                    final_score,
+                    raw_score,
                     disease.get('matched_symptoms', [])
                 )
-                
-                # Extract matching arguments
                 arguments = self.scoring_service.extract_matching_arguments(
                     disease.get('matched_symptoms', []),
                     max_arguments=5
                 )
-                
-                # Add ML confidence if available
                 if disease.get('ml_score'):
                     arguments.insert(0, f"Confiance IA: {disease['ml_score']:.0f}%")
-                
-                # Get recommended examinations
-                examinations = disease.get('analyses', [])[:5]
-                
-                # Create diagnostic result
+
                 result = DiagnosticResult(
                     maladie=disease['disease_name'],
-                    score=final_score,
+                    score=raw_score,          # will be normalised after sort
                     urgence=urgency,
                     compatibilite_age=age_compatible,
                     compatibilite_sexe=sex_compatible,
-                    examens_recommandes=examinations,
+                    examens_recommandes=disease.get('analyses', [])[:5],
                     arguments=arguments if arguments else ["Correspondance des symptômes"]
                 )
-                
-                diagnostic_results.append(result)
-            
-            # Step 5: Sort, deduplicate, threshold
-            diagnostic_results.sort(key=lambda x: x.score, reverse=True)
+                raw_scored.append((raw_score, result))
 
-            # Anti-anchoring: max 1 variant per root in top 4, embed duplicates as variantes
+            # Step 5a: Sort by RAW score (pre-cap) so a heavily-boosted disease
+            # can displace the preliminary leader even if both would exceed 100.
+            raw_scored.sort(key=lambda x: x[0], reverse=True)
+            diagnostic_results = [r for _, r in raw_scored]
+
+            # Step 5b: Anti-anchoring on the re-ordered list
             diagnostic_results = _apply_anti_anchoring(diagnostic_results)
+
+            # Step 5c: Re-normalise so the winner always shows ≤ 85 %
+            # (consistent with ML scale convention) — scales the whole list
+            # proportionally so relative gaps are preserved.
+            if diagnostic_results:
+                top_raw = diagnostic_results[0].score
+                if top_raw > 85.0:
+                    scale = 85.0 / top_raw
+                    for r in diagnostic_results:
+                        r.score = round(r.score * scale, 2)
+                else:
+                    for r in diagnostic_results:
+                        r.score = round(min(85.0, r.score), 2)
 
             # Minimum confidence threshold — intentionally low (hybrid ML scores scale 0-100)
             MIN_SCORE = 1.0
@@ -284,6 +306,18 @@ class HybridDiagnosticService:
         for dname in disease_scores:
             root = self._disease_root(dname)
             root_to_variants.setdefault(root, []).append(dname)
+
+        # Normalize ML probabilities so the top prediction maps to 85 %.
+        # Raw probabilities across 106 classes are small (~5-30 %) even for the
+        # clear winner; this normalization preserves the relative ranking while
+        # producing intuitive scores.
+        if ml_results:
+            max_ml_raw = max(ml['ml_score'] for ml in ml_results)
+            if max_ml_raw > 0:
+                TARGET_TOP = 85.0
+                scale = min(TARGET_TOP / max_ml_raw, 5.0)  # cap at 5× amplification
+                for ml in ml_results:
+                    ml['ml_score'] = min(TARGET_TOP, round(ml['ml_score'] * scale, 2))
 
         # Apply ML scores to all fuzzy variants sharing the same root
         for ml in ml_results:

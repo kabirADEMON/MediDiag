@@ -1,16 +1,16 @@
-/**
+﻿/**
  * Consultation Page
  * Workflow: symptômes → diagnostic préliminaire → analyses → diagnostic final → validation → PDF
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Stethoscope, Search, CheckCircle, AlertCircle, ChevronRight,
   ChevronDown, Plus, X, RotateCcw, FileDown, Save, ThumbsUp,
-  ThumbsDown, Loader2, Sparkles, Clock, Ban,
+  ThumbsDown, Loader2, Sparkles, Clock, Ban, Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -323,8 +323,8 @@ function StepBar({ step }) {
         <div key={i} className="flex items-center gap-2 flex-1 last:flex-none">
           <div className={`flex items-center gap-2 ${i < steps.length - 1 ? 'flex-1' : ''}`}>
             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-              i < step ? 'bg-blue-600 text-white' :
-              i === step ? 'bg-blue-600 text-white ring-4 ring-blue-100' :
+              i < step ? 'bg-indigo-600 text-white' :
+              i === step ? 'bg-indigo-600 text-white ring-4 ring-indigo-100' :
               'bg-slate-100 text-slate-400'
             }`}>
               {i < step ? <CheckCircle className="w-4 h-4" /> : i + 1}
@@ -334,7 +334,7 @@ function StepBar({ step }) {
             </span>
           </div>
           {i < steps.length - 1 && (
-            <div className={`h-px flex-1 mx-2 ${i < step ? 'bg-blue-600' : 'bg-slate-200'}`} />
+            <div className={`h-px flex-1 mx-2 ${i < step ? 'bg-indigo-600' : 'bg-slate-200'}`} />
           )}
         </div>
       ))}
@@ -483,6 +483,10 @@ export function Consultation() {
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [searchingPatient, setSearchingPatient] = useState(false)
   const [patientError, setPatientError] = useState('')
+  const [patientsList, setPatientsList] = useState([])
+  const [patientSearch, setPatientSearch] = useState('')
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false)
+  const patientDropdownRef = useRef(null)
 
   // Form data
   const [motif, setMotif] = useState('')
@@ -502,6 +506,7 @@ export function Consultation() {
   const [finalResults, setFinalResults] = useState(null)   // step 3 (after analyses)
   const [recommendedAnalyses, setRecommendedAnalyses] = useState([])
   const [loadingReco, setLoadingReco] = useState(false)
+  const [analysesMetadata, setAnalysesMetadata] = useState({})
 
   // Validation
   const [validationChoice, setValidationChoice] = useState(null) // 'confirm' | 'alternative'
@@ -610,7 +615,11 @@ export function Consultation() {
 
   const loadSuggestions = async () => {
     try {
-      const [sr, ar] = await Promise.all([metadataApi.getSymptoms(), metadataApi.getAnalyses()])
+      const [sr, ar, pr] = await Promise.all([
+        metadataApi.getSymptoms(),
+        metadataApi.getAnalyses(),
+        patientApi.getPatients({ limit: 200 }),
+      ])
       if (sr.success) {
         const d = sr.data?.data || sr.data
         setSymptomsSuggestions(d?.symptoms || [])
@@ -619,10 +628,25 @@ export function Consultation() {
         const d = ar.data?.data || ar.data
         setAnalysesSuggestions(Array.isArray(d?.analyses) ? d.analyses : [])
       }
+      if (pr.success) {
+        const d = pr.data?.data || pr.data
+        setPatientsList(d?.patients || [])
+      }
     } finally {
       setLoadingSuggestions(false)
     }
   }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleOutside(e) {
+      if (patientDropdownRef.current && !patientDropdownRef.current.contains(e.target)) {
+        setShowPatientDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [])
 
   const searchPatient = async () => {
     if (!patientCode.trim()) { setPatientError('Entrez un code patient'); return }
@@ -683,6 +707,30 @@ export function Consultation() {
       setLoading(false)
     }
   }
+
+  // Load exam classification metadata from the backend (best-effort, called when step 1 is reached)
+  const loadExaminationsMetadata = useCallback(async () => {
+    if (symptoms.length === 0) return
+    try {
+      const res = await diagnosticApi.getRecommendedExaminations({
+        age: age || 30, sexe, symptomes: symptoms,
+      })
+      if (res.success) {
+        const d = res.data?.data || res.data
+        const meta = {}
+        for (const a of (d.analyses || [])) {
+          meta[a.name] = a
+        }
+        setAnalysesMetadata(meta)
+      }
+    } catch {
+      // best-effort — UI still works without metadata
+    }
+  }, [age, sexe, symptoms])
+
+  useEffect(() => {
+    if (step === 1) loadExaminationsMetadata()
+  }, [step]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Step 2 → Step 3: diagnostic final avec analyses
   const launchFinal = async () => {
@@ -770,6 +818,27 @@ export function Consultation() {
     setSymptoms(prev => [...prev, s])
   }
 
+  const filteredPatients = useMemo(() => {
+    if (!patientSearch.trim()) return patientsList.slice(0, 8)
+    const q = patientSearch.toLowerCase()
+    return patientsList
+      .filter(p =>
+        `${p.prenom} ${p.nom}`.toLowerCase().includes(q) ||
+        (p.code_patient || '').toLowerCase().includes(q)
+      )
+      .slice(0, 8)
+  }, [patientsList, patientSearch])
+
+  const selectPatient = (p) => {
+    setSelectedPatient(p)
+    setAge(calculateAge(p.date_naissance))
+    setSexe(p.sexe)
+    setPatientCode(p.code_patient)
+    setPatientSearch('')
+    setShowPatientDropdown(false)
+    setPatientError('')
+  }
+
   const currentDiags = (step >= 3 ? finalResults : prelimResults)?.diagnostics || []
   const topDiag = currentDiags[0]
 
@@ -852,7 +921,7 @@ export function Consultation() {
     setSavedData(null); setError(''); setRecommendedAnalyses([])
     setSymptomWarning(''); setSessionRestored(false)
     setSelectedPatient(null); setPatientCode(''); setAge(''); setSexe('M')
-    setParsedMotif(null)
+    setParsedMotif(null); setAnalysesMetadata({})
   }
 
   // Accept all extracted symptoms from motif parser
@@ -873,7 +942,7 @@ export function Consultation() {
       <StepBar step={step} />
 
       {sessionRestored && !saved && (
-        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm">
           <RotateCcw className="w-4 h-4 shrink-0" />
           <span>Consultation précédente restaurée — vous reprenez là où vous vous étiez arrêté.</span>
           <button
@@ -901,23 +970,75 @@ export function Consultation() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h2 className="text-sm font-semibold text-slate-800 mb-4">Patient</h2>
               {!selectedPatient ? (
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                      placeholder="Code patient (PAT-...)"
-                      value={patientCode}
-                      onChange={e => setPatientCode(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && searchPatient()}
-                    />
-                    <Button variant="primary" size="sm" onClick={searchPatient} loading={searchingPatient}>
-                      <Search className="w-4 h-4" />
-                    </Button>
+                <div className="space-y-3" ref={patientDropdownRef}>
+                  {/* Combobox */}
+                  <div className="relative">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <input
+                          className="w-full pl-9 pr-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          placeholder="Nom, prénom ou code PAT-..."
+                          value={patientSearch}
+                          onChange={e => { setPatientSearch(e.target.value); setShowPatientDropdown(true) }}
+                          onFocus={() => setShowPatientDropdown(true)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && filteredPatients.length > 0) selectPatient(filteredPatients[0])
+                            if (e.key === 'Escape') setShowPatientDropdown(false)
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Dropdown */}
+                    {showPatientDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden">
+                        {filteredPatients.length > 0 ? (
+                          <>
+                            <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100">
+                              <p className="text-xs text-slate-400">
+                                {patientSearch ? `${filteredPatients.length} résultat(s)` : `${patientsList.length} patients — tapez pour filtrer`}
+                              </p>
+                            </div>
+                            <div className="max-h-52 overflow-y-auto">
+                              {filteredPatients.map(p => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onMouseDown={() => selectPatient(p)}
+                                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50 transition-colors text-left"
+                                >
+                                  <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
+                                    {(p.prenom?.[0] || '?').toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-slate-800 truncate">
+                                      {p.prenom} {p.nom}
+                                    </p>
+                                    <p className="text-xs text-slate-400 font-mono">{p.code_patient}</p>
+                                  </div>
+                                  <div className="text-xs text-slate-400 shrink-0">
+                                    {p.sexe} · {calculateAge(p.date_naissance)} ans
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="px-4 py-6 text-center text-sm text-slate-400">
+                            {patientsList.length === 0 ? 'Chargement...' : 'Aucun patient trouvé'}
+                          </div>
+                        )}
+                        <div className="border-t border-slate-100 px-4 py-2.5">
+                          <p className="text-xs text-slate-400">
+                            Laissez vide pour un diagnostic anonyme
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
+
                   {patientError && <p className="text-xs text-red-600">{patientError}</p>}
-                  <p className="text-xs text-slate-400">
-                    Ou laissez vide pour un diagnostic anonyme
-                  </p>
                 </div>
               ) : (
                 <div className="flex items-start justify-between p-3.5 rounded-lg bg-slate-50 border border-slate-200">
@@ -956,7 +1077,7 @@ export function Consultation() {
                     <label className="block text-xs font-medium text-slate-500 mb-1.5">Âge</label>
                     <input
                       type="number" min="1" max="120"
-                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       placeholder="ex : 35"
                       value={age}
                       onChange={e => setAge(e.target.value === '' ? '' : Number(e.target.value))}
@@ -967,7 +1088,7 @@ export function Consultation() {
                     <div className="flex gap-3 mt-2">
                       {['M', 'F'].map(s => (
                         <label key={s} className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="radio" value={s} checked={sexe === s} onChange={() => setSexe(s)} className="accent-blue-600" />
+                          <input type="radio" value={s} checked={sexe === s} onChange={() => setSexe(s)} className="accent-indigo-600" />
                           <span className="text-sm">{s === 'M' ? 'Masculin' : 'Féminin'}</span>
                         </label>
                       ))}
@@ -981,10 +1102,10 @@ export function Consultation() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h2 className="text-sm font-semibold text-slate-800 mb-3">
                 Motif de consultation <span className="text-red-500">*</span>
-                {parsingMotif && <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-blue-400" />}
+                {parsingMotif && <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-indigo-400" />}
               </h2>
               <textarea
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 rows={3}
                 placeholder="Ex : Douleurs pelviennes aiguës depuis 2 jours, saignements vaginaux de couleur sombre, sans fièvre ni écoulement..."
                 value={motif}
@@ -993,13 +1114,13 @@ export function Consultation() {
 
               {/* ── NLP Extraction Card ── */}
               {parsedMotif && (
-                <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2.5">
+                <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700">
                       <Sparkles className="w-3.5 h-3.5" />
                       Analyse automatique du motif
                     </div>
-                    <button onClick={() => setParsedMotif(null)} className="text-blue-300 hover:text-blue-500">
+                    <button onClick={() => setParsedMotif(null)} className="text-indigo-300 hover:text-indigo-500">
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1007,8 +1128,8 @@ export function Consultation() {
                   {/* Temporalité */}
                   {parsedMotif.temporalite !== 'inconnue' && (
                     <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span className="text-xs text-blue-800">
+                      <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span className="text-xs text-indigo-800">
                         Temporalité détectée :{' '}
                         <span className={`font-semibold ${parsedMotif.temporalite === 'aiguë' ? 'text-amber-700' : 'text-purple-700'}`}>
                           {parsedMotif.temporalite}
@@ -1023,7 +1144,7 @@ export function Consultation() {
                   {/* Symptômes détectés */}
                   {parsedMotif.symptomes_extraits?.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-blue-700 mb-1.5">
+                      <p className="text-xs font-medium text-indigo-700 mb-1.5">
                         Symptômes détectés dans le motif :
                       </p>
                       <div className="flex flex-wrap gap-1.5">
@@ -1037,7 +1158,7 @@ export function Consultation() {
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
                                 alreadyAdded
                                   ? 'bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default'
-                                  : 'bg-white border-blue-300 text-blue-700 hover:bg-blue-100 cursor-pointer'
+                                  : 'bg-white border-indigo-300 text-indigo-700 hover:bg-indigo-100 cursor-pointer'
                               }`}
                             >
                               {alreadyAdded ? <CheckCircle className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
@@ -1049,7 +1170,7 @@ export function Consultation() {
                       {parsedMotif.symptomes_extraits.some(s => !symptoms.includes(s)) && (
                         <button
                           onClick={acceptExtractedSymptoms}
-                          className="mt-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 underline"
+                          className="mt-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline"
                         >
                           Ajouter tous
                         </button>
@@ -1083,7 +1204,7 @@ export function Consultation() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h2 className="text-sm font-semibold text-slate-800 mb-3">
                 Symptômes <span className="text-red-500">*</span>
-                {symptoms.length > 0 && <span className="ml-1 text-blue-600">({symptoms.length})</span>}
+                {symptoms.length > 0 && <span className="ml-1 text-indigo-600">({symptoms.length})</span>}
               </h2>
               <Autocomplete
                 placeholder="Rechercher un symptôme..."
@@ -1101,7 +1222,7 @@ export function Consultation() {
               {symptoms.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {symptoms.map(s => (
-                    <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium">
+                    <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-medium">
                       {s}
                       <button onClick={() => setSymptoms(symptoms.filter(x => x !== s))}>
                         <X className="w-3 h-3" />
@@ -1174,7 +1295,7 @@ export function Consultation() {
                     <p className="text-xs text-slate-400 mt-0.5">Saisissez les valeurs du laboratoire</p>
                   </div>
                   {Object.keys(analyses).length > 0 && (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
                       {Object.keys(analyses).length} analyse{Object.keys(analyses).length > 1 ? 's' : ''}
                     </span>
                   )}
@@ -1200,7 +1321,7 @@ export function Consultation() {
                         value={customAnalyseName}
                         onChange={e => setCustomAnalyseName(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && addCustomAnalyse()}
-                        className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       />
                       <input
                         type="text"
@@ -1208,12 +1329,12 @@ export function Consultation() {
                         value={customAnalyseValue}
                         onChange={e => setCustomAnalyseValue(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && addCustomAnalyse()}
-                        className="w-32 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-32 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       />
                       <button
                         onClick={addCustomAnalyse}
                         disabled={!customAnalyseName.trim()}
-                        className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                        className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
@@ -1230,11 +1351,31 @@ export function Consultation() {
                     </div>
                     <div className="divide-y divide-slate-50">
                       {Object.entries(analyses).map(([name, value]) => {
-                        const norm = findNorm(name)
+                        const norm  = findNorm(name)
                         const guide = findGuide(name)
-                        const isQual = guide && guide.type !== 'numerique' && !norm
+                        const meta  = analysesMetadata[name]
+
+                        // Type resolution: API metadata wins over local lookup
+                        const isNumeric = meta?.type_saisie === 'numerique'
+                          || (!meta && !!norm && !(guide && guide.type !== 'numerique'))
+                        const isQual = !isNumeric && (
+                          meta?.type_saisie === 'qualitatif'
+                          || (guide && guide.type !== 'numerique' && !norm)
+                          || !!meta
+                        )
+
+                        // Norm values: prefer API meta, fall back to local table
+                        const normeMin   = meta?.norme_min   ?? norm?.min
+                        const normeMax   = meta?.norme_max   ?? norm?.max
+                        const normeUnite = meta?.unite       || norm?.unit || ''
+                        const defautPath = meta?.valeur_defaut_pathologique ?? null
+
+                        // Options: prefer API meta, fall back to local guide
+                        const qualOptions = meta?.options_selection || guide?.options || []
+
                         const abnormal = isQual ? isQualitativeAbnormal(value) : isAbnormal(name, value)
                         const hasValue = typeof value === 'string' ? value.trim() !== '' : value !== '' && value !== null && value !== undefined
+
                         return (
                           <div
                             key={name}
@@ -1242,17 +1383,19 @@ export function Consultation() {
                               abnormal ? 'bg-red-50/60' : 'hover:bg-slate-50/60'
                             }`}
                           >
-                            {/* Name + description */}
+                            {/* Name + norm badge */}
                             <div className="flex items-start justify-between gap-2 mb-2">
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-slate-800">{name}</p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-medium text-slate-800">{name}</p>
+                                  {isNumeric && normeMin != null && normeMax != null && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 tabular-nums">
+                                      Norme&nbsp;: {normeMin}–{normeMax}{normeUnite ? ` ${normeUnite}` : ''}
+                                    </span>
+                                  )}
+                                </div>
                                 {guide?.desc && (
                                   <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{guide.desc}</p>
-                                )}
-                                {!guide?.desc && norm && (
-                                  <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-                                    Normale : {norm.min} – {norm.max}{norm.unit ? ` ${norm.unit}` : ''}
-                                  </p>
                                 )}
                               </div>
                               <button
@@ -1265,7 +1408,7 @@ export function Consultation() {
 
                             {/* Input row */}
                             <div className="flex items-center gap-2">
-                              {isQual && guide.options ? (
+                              {isQual && qualOptions.length > 0 ? (
                                 <select
                                   value={value}
                                   onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
@@ -1274,30 +1417,41 @@ export function Consultation() {
                                       ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200'
                                       : value && !abnormal
                                         ? 'border-emerald-300 bg-emerald-50 text-emerald-800 focus:ring-emerald-200'
-                                        : 'border-slate-200 bg-white text-slate-500 focus:ring-blue-100 focus:border-blue-300'
+                                        : 'border-slate-200 bg-white text-slate-500 focus:ring-indigo-100 focus:border-indigo-300'
                                   }`}
                                 >
                                   <option value="">— Sélectionner le résultat —</option>
-                                  {guide.options.map(opt => (
+                                  {qualOptions.map(opt => (
                                     <option key={opt} value={opt}>{opt}</option>
                                   ))}
                                 </select>
                               ) : (
                                 <input
-                                  type={norm ? 'number' : 'text'}
-                                  step={norm ? 'any' : undefined}
+                                  type={isNumeric ? 'number' : 'text'}
+                                  step={isNumeric ? 'any' : undefined}
                                   value={value}
                                   onChange={e => setAnalyses({ ...analyses, [name]: e.target.value })}
-                                  placeholder={norm ? `Normale : ${norm.min}–${norm.max} ${norm.unit || ''}` : 'Valeur...'}
+                                  placeholder={normeMin != null ? `Ex : ${normeMin}–${normeMax}${normeUnite ? ` ${normeUnite}` : ''}` : 'Valeur...'}
                                   className={`flex-1 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
                                     abnormal
                                       ? 'border-red-300 bg-red-50 text-red-800 focus:ring-red-200 placeholder-red-300'
-                                      : 'border-slate-200 bg-white text-slate-800 focus:ring-blue-100 focus:border-blue-300'
+                                      : 'border-slate-200 bg-white text-slate-800 focus:ring-indigo-100 focus:border-indigo-300'
                                   }`}
                                 />
                               )}
-                              {norm && !isQual && (
-                                <span className="text-xs text-slate-400 shrink-0">{norm.unit}</span>
+                              {isNumeric && normeUnite && (
+                                <span className="text-xs text-slate-400 shrink-0">{normeUnite}</span>
+                              )}
+                              {isNumeric && defautPath != null && (
+                                <button
+                                  type="button"
+                                  title={`Simuler valeur anormale (${defautPath} ${normeUnite})`}
+                                  onClick={() => setAnalyses({ ...analyses, [name]: String(defautPath) })}
+                                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors shrink-0"
+                                >
+                                  <Zap className="w-3 h-3" />
+                                  Simuler
+                                </button>
                               )}
                               <div className="shrink-0">
                                 {!hasValue ? (
@@ -1322,8 +1476,8 @@ export function Consultation() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mb-3">
-                      <Stethoscope className="w-6 h-6 text-blue-400" />
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mb-3">
+                      <Stethoscope className="w-6 h-6 text-indigo-400" />
                     </div>
                     <p className="text-sm font-medium text-slate-600 mb-1">Aucune analyse ajoutée</p>
                     <p className="text-xs text-slate-400">Utilisez le champ ci-dessus ou les suggestions de l'IA</p>
@@ -1364,7 +1518,7 @@ export function Consultation() {
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                           added
                             ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700'
                         }`}
                       >
                         <span>{added ? '✓' : '+'}</span>
@@ -1380,14 +1534,14 @@ export function Consultation() {
                     <>
                       {/* Examens communs */}
                       {grouped.commonExams?.length > 0 && (
-                        <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                        <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">
                               Examens communs à plusieurs hypothèses
                             </span>
                             <button
                               onClick={() => addAll(grouped.commonExams)}
-                              className="text-xs text-blue-600 font-semibold hover:underline"
+                              className="text-xs text-indigo-600 font-semibold hover:underline"
                             >
                               Tout ajouter
                             </button>
@@ -1410,7 +1564,7 @@ export function Consultation() {
                             </div>
                             <button
                               onClick={() => addAll(g.exams)}
-                              className="text-xs text-blue-600 font-semibold hover:underline shrink-0 ml-2"
+                              className="text-xs text-indigo-600 font-semibold hover:underline shrink-0 ml-2"
                             >
                               Tout
                             </button>
@@ -1493,8 +1647,8 @@ export function Consultation() {
           ) : (
             <>
               {/* Final diagnostic — 1 seule maladie à valider */}
-              <div className="bg-white rounded-xl border border-blue-200 shadow-sm">
-                <div className="px-5 py-4 border-b border-blue-100 flex items-center justify-between bg-blue-50 rounded-t-xl">
+              <div className="bg-white rounded-xl border border-indigo-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-indigo-100 flex items-center justify-between bg-indigo-50 rounded-t-xl">
                   <div>
                     <h2 className="text-sm font-semibold text-slate-800">Diagnostic retenu par l'IA</h2>
                     <p className="text-xs text-slate-500 mt-0.5">Le système a sélectionné la maladie la plus probable — à vous de valider</p>
@@ -1553,7 +1707,7 @@ export function Consultation() {
                   <div className="mb-4">
                     <label className="block text-xs font-medium text-slate-500 mb-1.5">Diagnostic alternatif</label>
                     <input
-                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       placeholder="Nom de la maladie diagnostiquée"
                       value={alternativeDiag}
                       onChange={e => setAlternativeDiag(e.target.value)}
@@ -1564,7 +1718,7 @@ export function Consultation() {
                 <div className="mb-4">
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Notes complémentaires (optionnel)</label>
                   <textarea
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     rows={2}
                     placeholder="Observations cliniques, traitement envisagé..."
                     value={notes}
@@ -1573,7 +1727,7 @@ export function Consultation() {
                 </div>
 
                 {!selectedPatient && (
-                  <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-xs">
+                  <div className="mb-4 p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs">
                     Sélectionnez un patient à l'étape 1 pour enregistrer cette consultation dans son dossier.
                   </div>
                 )}

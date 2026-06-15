@@ -86,14 +86,18 @@ export function Login() {
             </h1>
 
             <p className="text-slate-400 text-base leading-relaxed max-w-sm">
-              Analyse symptomatique basée sur 1 000 pathologies référencées.
-              Précision 90.7% — Random Forest.
+              Analyse symptomatique basée sur plus de 100 pathologies référencées.
+              </p>
+              
+              <p 
+              className="text-slate-400 text-base leading-relaxed max-w-sm">
+                Précision 90.7% 
             </p>
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-4 mt-12 pt-8 border-t border-slate-800">
               {[
-                { value: '1 000', label: 'Maladies' },
+                { value: '106 ', label: 'Maladies' },
                 { value: '90.7%', label: 'Précision' },
                 { value: '3', label: 'Rôles' },
               ].map((s) => (
@@ -105,7 +109,7 @@ export function Login() {
             </div>
           </div>
 
-          <p className="text-xs text-slate-600">© 2025 MediDiag</p>
+          <p className="text-xs text-slate-600">© 2026 MediDiag</p>
         </div>
       </div>
 
@@ -227,7 +231,6 @@ export function Login() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-400 mt-2">Mot de passe : demo123</p>
           </div>
         </div>
       </div>

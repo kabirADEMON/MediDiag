@@ -46,57 +46,41 @@ def calculate_symptom_match_score(
     """
     Calculate overall symptom match score between patient and disease.
 
-    Uses a coverage-adjusted scoring model: the base weighted score is multiplied
-    by a coverage factor that penalises diseases where only a small fraction of
-    their defining symptoms are present in the patient.
-
     Coverage factor = (n_matched / n_disease_symptoms) ** 0.4
-      - 1 / 9 matched → ×0.36   (very sparse match, heavily penalised)
-      - 3 / 9 matched → ×0.62   (moderate match)
-      - 6 / 9 matched → ×0.84   (good match)
-      - 9 / 9 matched → ×1.00   (perfect coverage)
     """
     if not patient_symptoms or not disease_symptoms:
         return 0.0
 
-    # Default weights: decreasing importance for each disease symptom position
     if weights is None:
         weights = [1.0 / (i + 1) for i in range(len(disease_symptoms))]
 
     total_score = 0.0
     total_weight = sum(weights[:len(disease_symptoms)])
     matched_disease_symptoms: set = set()
-
-    MATCH_THRESHOLD = 65  # raised from 60 to reduce false positives
+    MATCH_THRESHOLD = 65
 
     for patient_symptom in patient_symptoms:
-        best_match_score = 0.0
-        best_match_idx = -1
-
-        for idx, disease_symptom in enumerate(disease_symptoms):
-            if idx in matched_disease_symptoms:
-                continue
-            score = fuzz.token_sort_ratio(patient_symptom, disease_symptom)
-            if score > best_match_score:
-                best_match_score = score
-                best_match_idx = idx
-
-        if best_match_score >= MATCH_THRESHOLD and best_match_idx >= 0:
-            weight = weights[best_match_idx] if best_match_idx < len(weights) else weights[-1]
-            total_score += (best_match_score / 100.0) * weight
-            matched_disease_symptoms.add(best_match_idx)
+        # process.extractOne uses optimised C path — replaces the inner Python loop
+        result = process.extractOne(
+            patient_symptom,
+            disease_symptoms,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=MATCH_THRESHOLD,
+        )
+        if result:
+            _, best_score, best_idx = result
+            if best_idx not in matched_disease_symptoms:
+                weight = weights[best_idx] if best_idx < len(weights) else weights[-1]
+                total_score += (best_score / 100.0) * weight
+                matched_disease_symptoms.add(best_idx)
 
     if total_weight == 0 or not matched_disease_symptoms:
         return 0.0
 
-    # Base score: weighted quality of matches normalised to 0-100
     base = (total_score / total_weight) * 100
-
-    # Coverage penalty: penalise diseases matched on too few of their symptoms
     n_matched = len(matched_disease_symptoms)
     n_disease = len(disease_symptoms)
     coverage_factor = (n_matched / n_disease) ** 0.4
-
     return min(100.0, base * coverage_factor)
 
 
@@ -134,32 +118,29 @@ def find_matching_symptoms(
     threshold: float = 65.0
 ) -> List[Dict[str, any]]:
     """
-    Find which patient symptoms match which disease symptoms
-    
-    Args:
-        patient_symptoms: List of patient symptoms
-        disease_symptoms: List of disease symptoms
-        threshold: Minimum match score
-        
-    Returns:
-        List of matches with scores
+    Find which patient symptoms match which disease symptoms.
+    Uses process.extract (C-optimised) instead of a nested Python loop.
     """
+    if not patient_symptoms or not disease_symptoms:
+        return []
+
     matches = []
-    
     for patient_symptom in patient_symptoms:
-        for disease_symptom in disease_symptoms:
-            score = fuzz.token_sort_ratio(patient_symptom, disease_symptom)
-            
-            if score >= threshold:
-                matches.append({
-                    "patient_symptom": patient_symptom,
-                    "disease_symptom": disease_symptom,
-                    "score": score
-                })
-    
-    # Sort by score descending
+        results = process.extract(
+            patient_symptom,
+            disease_symptoms,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=threshold,
+            limit=None,
+        )
+        for match, score, _ in results:
+            matches.append({
+                "patient_symptom": patient_symptom,
+                "disease_symptom": match,
+                "score": score,
+            })
+
     matches.sort(key=lambda x: x["score"], reverse=True)
-    
     return matches
 
 

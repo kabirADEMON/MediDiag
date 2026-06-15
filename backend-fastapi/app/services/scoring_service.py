@@ -3,8 +3,109 @@ Scoring service - Calculate final scores and urgency levels
 """
 from typing import Dict, List
 import logging
+import re
+
+from rapidfuzz import fuzz
 
 logger = logging.getLogger(__name__)
+
+# Strip parenthetical qualifiers: "NFS (hyperleucocytose)" → "nfs"
+_STRIP_PARENS = re.compile(r'\s*\([^)]*\)')
+
+# Synonym groups — any two terms in the same group are considered a match.
+# Covers the gap between frontend display names and dataset abbreviations.
+_SYNONYM_GROUPS: List[set] = [
+    # NFS / complete blood count
+    {"nfs", "nfp", "fns", "globules blancs", "leucocytes", "gb",
+     "globules rouges", "gr", "hémoglobine", "hemoglobine", "hb",
+     "hematocrite", "ht", "plaquettes", "formule sanguine",
+     "numération formule sanguine", "numération", "cbc"},
+    # CRP
+    {"crp", "protéine c réactive", "proteine c reactive",
+     "protéine c", "proteine c"},
+    # ESR / VS
+    {"vs", "vitesse de sédimentation", "vitesse sedimentation", "esr"},
+    # Blood glucose / diabetes
+    {"glycémie", "glycemie", "glucose", "sucre sanguin", "hba1c",
+     "hémoglobine glyquée", "hemoglobine glyquee", "insuline", "insulinémie"},
+    # Renal function
+    {"créatinine", "creatinine", "bilan rénal", "bilan renal",
+     "fonction rénale", "fonction renale", "urée", "uree", "ionogramme"},
+    # Liver / transaminases
+    {"transaminases", "alat", "asat", "tgp", "tgo", "sgpt", "sgot",
+     "bilan hépatique", "bilan hepatique", "gamma gt", "gamma-gt",
+     "ggt", "phosphatases alcalines", "pal"},
+    # Bilirubin
+    {"bilirubine", "bili", "bilirubine totale"},
+    # Troponin
+    {"troponine", "troponin", "troponine i", "troponine t"},
+    # D-dimers
+    {"d-dimères", "d-dimeres", "d dimères", "d dimeres",
+     "ddimères", "ddimeres"},
+    # Urine analysis
+    {"ecbu", "analyse urine", "examen urine", "bau",
+     "bandelette urinaire", "cytobactériologique urine"},
+    # Blood culture
+    {"hémoculture", "hemoculture", "culture sanguine"},
+    # Procalcitonin
+    {"procalcitonine", "pct", "procalcitonin"},
+    # Pancreatic enzymes
+    {"lipase", "amylase", "bilan pancréatique", "bilan pancreatique"},
+    # Coagulation
+    {"tp", "inr", "coagulation", "taux de prothrombine", "temps de quick"},
+    # Thyroid
+    {"tsh", "thyroïde", "thyroide", "t3", "t4"},
+    # Iron / ferritin
+    {"ferritine", "bilan martial", "fer sérique", "fer serique",
+     "saturation transferrine"},
+    # LDH
+    {"ldh", "lactate déshydrogénase", "lactate dehydrogenase",
+     "lacticodéhydrogénase", "lacticodehydrogenase"},
+    # Uric acid
+    {"acide urique", "uricémie", "uricemie"},
+    # Fibrinogen
+    {"fibrinogène", "fibrinogene", "fibrine"},
+    # Prothrombin / INR (merged with coagulation above but explicit)
+    {"tp", "inr"},
+]
+
+# Build reverse lookup: term → group index
+_TERM_TO_GROUP: Dict[str, int] = {}
+for _i, _grp in enumerate(_SYNONYM_GROUPS):
+    for _term in _grp:
+        _TERM_TO_GROUP[_term] = _i
+
+
+def _norm_exp(name: str) -> str:
+    """'NFS (hyperleucocytose)' → 'nfs'."""
+    return _STRIP_PARENS.sub('', name).strip().lower()
+
+
+def _analyses_match(provided_lower: str, expected_raw: str) -> bool:
+    """True if the provided analysis name corresponds to the expected dataset name."""
+    exp_norm = _norm_exp(expected_raw)
+    exp_raw_low = expected_raw.lower()
+
+    # 1. Direct fuzzy on normalized strings
+    if fuzz.ratio(provided_lower, exp_norm) >= 72:
+        return True
+    if fuzz.partial_ratio(provided_lower, exp_norm) >= 82:
+        return True
+
+    # 2. Synonym group match
+    p_grp = _TERM_TO_GROUP.get(provided_lower)
+    e_grp = _TERM_TO_GROUP.get(exp_norm)
+    if p_grp is not None and e_grp is not None and p_grp == e_grp:
+        return True
+
+    # 3. Any synonym of the provided name appears literally in the raw expected string
+    # e.g. provided="leucocytes", synonym "nfs" → found in "nfs (hyperleucocytose)"
+    if p_grp is not None:
+        for term in _SYNONYM_GROUPS[p_grp]:
+            if len(term) >= 3 and term in exp_raw_low:
+                return True
+
+    return False
 
 
 class ScoringService:
@@ -111,33 +212,20 @@ class ScoringService:
             if isinstance(expected_analyses, str):
                 expected_analyses = [a.strip() for a in expected_analyses.split(';')]
 
-            expected_lower = [a.lower() for a in expected_analyses]
-
             total_bonus = 0.0
             max_per_match_abnormal = 25.0   # abnormal + name match → strong confirmation
             max_per_match_normal   = 8.0    # normal  + name match → weak confirmation
 
             for provided_name in provided_analyses.keys():
                 p_low = provided_name.lower()
-                p_terms = p_low.split()
 
-                for exp in expected_lower:
-                    match_found = (
-                        p_low == exp
-                        or p_low in exp
-                        or exp in p_low
-                        or any(
-                            len(pt) >= 3 and et.startswith(pt[:3])
-                            for pt in p_terms
-                            for et in exp.split()
-                        )
-                    )
-                    if match_found:
+                for exp_raw in expected_analyses:
+                    if _analyses_match(p_low, exp_raw):
                         is_abnormal = p_low in anomaly_set
                         bonus = max_per_match_abnormal if is_abnormal else max_per_match_normal
                         total_bonus += bonus
                         logger.debug(
-                            f"Analyses match: '{provided_name}' ≈ '{exp}' "
+                            f"Analyses match: '{provided_name}' ≈ '{exp_raw}' "
                             f"({'abnormal' if is_abnormal else 'normal'}) +{bonus}"
                         )
                         break

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Maladies routes - Disease information endpoints
 """
 from fastapi import APIRouter, HTTPException, Query, status
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/maladies", tags=["Maladies"])
 
 
 @router.get("/")
-async def get_all_diseases(
+def get_all_diseases(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Number of records to return"),
     search: Optional[str] = Query(None, description="Search by disease name")
@@ -72,7 +72,7 @@ async def get_all_diseases(
 
 
 @router.get("/{disease_id}")
-async def get_disease_by_id(disease_id: int):
+def get_disease_by_id(disease_id: int):
     """
     Get detailed information about a specific disease
     
@@ -128,7 +128,7 @@ async def get_disease_by_id(disease_id: int):
 
 
 @router.get("/search/{query}")
-async def search_diseases(
+def search_diseases(
     query: str,
     limit: int = Query(20, ge=1, le=50, description="Number of results")
 ):
@@ -183,7 +183,7 @@ async def search_diseases(
 
 
 @router.get("/filter/age/{age}")
-async def filter_diseases_by_age(
+def filter_diseases_by_age(
     age: int,
     limit: int = Query(50, ge=1, le=100)
 ):
@@ -230,7 +230,7 @@ async def filter_diseases_by_age(
 
 
 @router.get("/categories/stats")
-async def get_disease_categories():
+def get_disease_categories():
     """
     Get disease statistics by categories
     

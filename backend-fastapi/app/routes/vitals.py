@@ -1,4 +1,4 @@
-"""
+﻿"""
 Vitals routes - Nurse vital signs management
 """
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/vitals", tags=["Vitals"])
 
 
 @router.post("/")
-async def create_vitals(
+def create_vitals(
     vitals_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -82,7 +82,7 @@ async def create_vitals(
 
 
 @router.get("/patient/{patient_id}")
-async def get_patient_vitals(
+def get_patient_vitals(
     patient_id: int,
     limit: int = 10,
     credentials: HTTPAuthorizationCredentials = Depends(security)
