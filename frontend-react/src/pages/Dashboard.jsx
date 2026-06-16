@@ -46,33 +46,69 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 const KPI_THEMES = [
-  { accent: 'bg-blue-600', light: 'bg-blue-50', icon: 'text-blue-600' },
-  { accent: 'bg-violet-600', light: 'bg-violet-50', icon: 'text-violet-600' },
-  { accent: 'bg-emerald-600', light: 'bg-emerald-50', icon: 'text-emerald-600' },
-  { accent: 'bg-amber-500', light: 'bg-amber-50', icon: 'text-amber-600' },
+  {
+    accent: 'bg-blue-600',
+    iconBg: 'bg-blue-600',
+    icon: 'text-white',
+    gradient: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)',
+    border: '#bfdbfe',
+    trend: 'text-blue-600 bg-blue-50',
+  },
+  {
+    accent: 'bg-violet-600',
+    iconBg: 'bg-violet-600',
+    icon: 'text-white',
+    gradient: 'linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)',
+    border: '#ddd6fe',
+    trend: 'text-violet-600 bg-violet-50',
+  },
+  {
+    accent: 'bg-emerald-600',
+    iconBg: 'bg-emerald-600',
+    icon: 'text-white',
+    gradient: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+    border: '#a7f3d0',
+    trend: 'text-emerald-600 bg-emerald-50',
+  },
+  {
+    accent: 'bg-amber-500',
+    iconBg: 'bg-amber-500',
+    icon: 'text-white',
+    gradient: 'linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)',
+    border: '#fde68a',
+    trend: 'text-amber-600 bg-amber-50',
+  },
 ]
 
-function KpiCard({ title, value, icon: Icon, sub, link, index = 0 }) {
+function KpiCard({ title, value, icon: Icon, sub, link, index = 0, trend }) {
   const theme = KPI_THEMES[index % KPI_THEMES.length]
+  const isPositive = trend && !trend.startsWith('▼')
   const content = (
-    <div className="group relative bg-white rounded-2xl border border-slate-100 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
-      {/* Subtle top accent bar */}
-      <div className={`absolute top-0 left-0 right-0 h-0.5 ${theme.accent} opacity-0 group-hover:opacity-100 transition-opacity`} />
-
+    <div
+      className="group relative rounded-2xl p-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 overflow-hidden"
+      style={{ background: theme.gradient, border: `1.5px solid ${theme.border}` }}
+    >
       <div className="flex items-start justify-between mb-5">
-        <div className={cn('flex items-center justify-center w-10 h-10 rounded-xl', theme.light)}>
+        <div className={cn('flex items-center justify-center w-10 h-10 rounded-xl shadow-sm', theme.iconBg)}>
           <Icon className={cn('w-5 h-5', theme.icon)} />
         </div>
-        {link && (
-          <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-        )}
+        <div className="flex items-center gap-2">
+          {trend && (
+            <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full', theme.trend)}>
+              {trend}
+            </span>
+          )}
+          {link && (
+            <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+          )}
+        </div>
       </div>
 
-      <div className="text-3xl font-bold text-slate-900 tabular-nums leading-none mb-1.5">
+      <div className="text-3xl font-extrabold text-slate-900 tabular-nums leading-none mb-1.5">
         {value ?? '—'}
       </div>
       <p className="text-xs font-medium text-slate-400">{sub}</p>
-      <p className="text-xs font-semibold text-slate-600 mt-0.5">{title}</p>
+      <p className="text-sm font-semibold text-slate-700 mt-1">{title}</p>
     </div>
   )
   if (link) return <Link to={link} className="block">{content}</Link>
@@ -202,22 +238,22 @@ export function Dashboard() {
   const kpiCards =
     role === 'infirmier'
       ? [
-          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients' },
-          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Ce mois' },
-          { title: "Aujourd'hui", value: stats.todayConsultations, icon: Calendar, sub: 'Consultations du jour' },
+          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients', trend: '▲ actif' },
+          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Ce mois', trend: '▲ ce mois' },
+          { title: "Aujourd'hui", value: stats.todayConsultations, icon: Calendar, sub: 'Consultations du jour', trend: '→ aujourd\'hui' },
         ]
       : role === 'administrateur'
       ? [
-          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients' },
-          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées' },
-          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients' },
-          { title: 'Utilisateurs', value: stats.totalUsers, icon: UserCog, sub: 'Comptes actifs', link: '/admin/users' },
+          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients', trend: '▲ total' },
+          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées', trend: '▲ cumulé' },
+          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients', trend: stats.patientsEnAttente > 0 ? '⚠ en attente' : '✓ à jour' },
+          { title: 'Utilisateurs', value: stats.totalUsers, icon: UserCog, sub: 'Comptes actifs', link: '/admin/users', trend: '▲ actifs' },
         ]
       : [
-          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients' },
-          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées', link: '/consultation' },
-          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients' },
-          { title: "Aujourd'hui", value: stats.todayConsultations, icon: Calendar, sub: 'Consultations du jour' },
+          { title: 'Patients', value: stats.totalPatients, icon: Users, sub: 'Total enregistrés', link: '/patients', trend: '▲ total' },
+          { title: 'Consultations', value: stats.totalConsultations, icon: Stethoscope, sub: 'Total effectuées', link: '/consultation', trend: '▲ cumulé' },
+          { title: 'En attente', value: stats.patientsEnAttente, icon: AlertCircle, sub: 'Patients non consultés', link: '/patients', trend: stats.patientsEnAttente > 0 ? '⚠ en attente' : '✓ à jour' },
+          { title: "Aujourd'hui", value: stats.todayConsultations, icon: Calendar, sub: 'Consultations du jour', trend: '→ aujourd\'hui' },
         ]
 
   return (

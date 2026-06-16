@@ -144,7 +144,25 @@
       "PowerShell(Start-Process -FilePath $venv -ArgumentList \"-m\", \"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\" -WorkingDirectory \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\" -WindowStyle Hidden)",
       "PowerShell($venv = \"C:\\\\Users\\\\Kabir\\\\PycharmProjects\\\\pythonProject1\\\\.venv\\\\Scripts\\\\python.exe\")",
       "PowerShell(Start-Process -FilePath $venv -ArgumentList \"-m uvicorn app.main:app --host 0.0.0.0 --port 8000\" -WorkingDirectory $workDir -WindowStyle Normal)",
-      "PowerShell($workDir = \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\")"
+      "PowerShell($workDir = \"C:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:8000/health\" -UseBasicParsing)",
+      "PowerShell(npm install -g playwright)",
+      "PowerShell(npx playwright install chromium)",
+      "PowerShell(Stop-Process -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Set-Location c:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi; $env:PYTHONIOENCODING=\"utf-8\"; python start_server.py)",
+      "PowerShell(Set-Location c:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi; $env:PYTHONIOENCODING=\"utf-8\"; python seed_demo.py)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; Set-Location \"c:\\\\Users\\\\Kabir\\\\Documents\\\\maladie\\\\backend-fastapi\"; python start_server.py)",
+      "PowerShell(Start-Sleep -Seconds 8; try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -UseBasicParsing -TimeoutSec 5; $r.Content } catch { \"Not ready: $_\" })",
+      "PowerShell(Start-Sleep -Seconds 9; try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -UseBasicParsing -TimeoutSec 5; $r.Content } catch { \"Not ready\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:5173\" -UseBasicParsing -TimeoutSec 3; \"Frontend OK $\\($r.StatusCode\\)\" } catch { \"Not up\" })",
+      "PowerShell(Get-Process -Name python, uvicorn -ErrorAction SilentlyContinue)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/patients/en-attente?limit=5\")",
+      "PowerShell($token = \\(Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/auth/login\" -Method Post -ContentType \"application/json\" -Body '{\"email\":\"medecin@demo.com\",\"password\":\"demo123\"}'\\).data.access_token; $headers = @{Authorization=\"Bearer $token\"}; $res = Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/patients?limit=5&skip=0\" -Headers $headers; $res.data.patients | Select-Object id, nom, prenom, a_ete_consulte | ConvertTo-Json)",
+      "PowerShell($token = \\(Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/auth/login\" -Method Post -ContentType \"application/json\" -Body '{\"email\":\"medecin@demo.com\",\"password\":\"demo123\"}'\\).data.access_token; $headers = @{Authorization=\"Bearer $token\"}; $res = Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/patients?limit=200&skip=0\" -Headers $headers; $nonConsultes = $res.data.patients | Where-Object { $_.a_ete_consulte -eq 0 }; Write-Host \"Total patients: $\\($res.data.total\\)\"; Write-Host \"Non consultés: $\\($nonConsultes.Count\\)\"; $nonConsultes | Select-Object id, nom, prenom, a_ete_consulte | ConvertTo-Json)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/auth/login\" -Method Post -ContentType \"application/json\" -Body '{\"email\":\"medecin@demo.com\",\"password\":\"demo123\"}')"
     ]
   }
 }

@@ -100,6 +100,41 @@ def get_patients(
         )
 
 
+@router.get("/en-attente")
+def get_patients_en_attente(limit: int = Query(20, ge=1, le=100)):
+    """Patients enregistrés n'ayant jamais eu de consultation."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.id, p.nom, p.prenom, p.code_patient, p.sexe,
+                   p.date_naissance, p.telephone, p.created_at
+            FROM patients p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM consultations c WHERE c.patient_id = p.id
+            )
+            ORDER BY p.created_at DESC
+            LIMIT ?
+        """, (limit,))
+        patients = [dict(row) for row in cursor.fetchall()]
+        cursor.execute("""
+            SELECT COUNT(*) FROM patients p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM consultations c WHERE c.patient_id = p.id
+            )
+        """)
+        total = cursor.fetchone()[0]
+        conn.close()
+        return SuccessResponse(
+            success=True,
+            message=f"{total} patient(s) en attente",
+            data={"patients": patients, "total": total}
+        )
+    except Exception as e:
+        logger.error(f"Error getting patients en attente: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{patient_id}")
 def get_patient_by_id(patient_id: int):
     """

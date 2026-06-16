@@ -187,3 +187,10 @@ dataset_loader = DatasetLoader()
 def get_dataset_loader() -> DatasetLoader:
     """Get the global dataset loader instance"""
     return dataset_loader
+
+
+def reload_dataset_loader() -> DatasetLoader:
+    """Force-reload the dataset from disk and reset the global singleton."""
+    global dataset_loader
+    dataset_loader = DatasetLoader()
+    return dataset_loader

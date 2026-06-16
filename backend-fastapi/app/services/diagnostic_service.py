@@ -11,6 +11,7 @@ from app.services.matching_service import get_matching_engine
 from app.services.scoring_service import get_scoring_service
 from app.services.recommendation_service import get_recommendation_service
 from app.services.clinical_scoring_service import get_clinical_scoring_manager
+from app.services.feedback_learning_service import get_feedback_learning_service
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,7 @@ class DiagnosticService:
                     disease_name=disease['disease_name'],
                     symptoms=request.symptomes,
                     age=request.age,
+                    analyses=request.analyses or {},
                 )
                 if clinical_boost > 0:
                     old = final_score
@@ -193,6 +195,16 @@ class DiagnosticService:
                     logger.info(
                         f"Clinical score boost for '{disease['disease_name']}': "
                         f"+{clinical_boost} → {old} → {final_score}"
+                    )
+
+                # Feedback learning: doctor-validated adjustment
+                feedback_adj = get_feedback_learning_service().get_adjustment(disease['disease_name'])
+                if feedback_adj != 0.0:
+                    old = final_score
+                    final_score = min(100.0, max(0.0, round(final_score + feedback_adj, 2)))
+                    logger.info(
+                        f"Feedback adj for '{disease['disease_name']}': "
+                        f"{feedback_adj:+.1f} → {old} → {final_score}"
                     )
 
                 # Determine urgency level

@@ -149,7 +149,7 @@ class MatchingEngine:
                 matched_symptoms = find_matching_symptoms(
                     cleaned_patient_symptoms,
                     disease_symptoms,
-                    threshold=60.0
+                    threshold=65.0
                 )
 
                 # IDF-based specificity bonus

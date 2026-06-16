@@ -3,7 +3,7 @@
  * Professional dark sidebar with role-based navigation
  */
 
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { cn } from '@/utils/helpers'
 import { useAuth } from '@/features/auth/context/AuthContext'
 import {
@@ -17,9 +17,10 @@ import {
   X,
   UserCog,
   ClipboardList,
-  ChevronRight,
   Shield,
   Heart,
+  Database,
+  LogOut,
 } from 'lucide-react'
 
 const NAV_BY_ROLE = {
@@ -73,6 +74,7 @@ const NAV_BY_ROLE = {
         label: 'ADMINISTRATION',
         items: [
           { name: 'Utilisateurs', href: '/admin/users', icon: UserCog },
+          { name: 'Dataset IA', href: '/admin/dataset', icon: Database },
           { name: 'Paramètres', href: '/settings', icon: Settings },
         ],
       },
@@ -163,6 +165,9 @@ function SidebarContent({ user, navigation, onClose }) {
   const initials = user
     ? ((user.prenom?.[0] || '') + (user.nom?.[0] || '')).toUpperCase() || '?'
     : '?'
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const handleLogout = async () => { await logout(); navigate('/login') }
   getInitialsBg()
 
   return (
@@ -209,7 +214,7 @@ function SidebarContent({ user, navigation, onClose }) {
       <div className="mx-5 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
 
       {/* User profile section */}
-      <div className="px-3 pb-4 shrink-0">
+      <div className="px-3 pb-4 shrink-0 space-y-2">
         <div className={cn(
           'flex items-center gap-3 px-3 py-3 rounded-xl border',
           rc.bg, rc.border
@@ -227,6 +232,13 @@ function SidebarContent({ user, navigation, onClose }) {
             </div>
           </div>
         </div>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-150 text-xs font-semibold"
+        >
+          <LogOut className="w-4 h-4 shrink-0" />
+          Déconnexion
+        </button>
       </div>
     </div>
   )

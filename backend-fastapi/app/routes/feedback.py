@@ -1,4 +1,4 @@
-﻿"""
+"""
 Diagnostic feedback routes - Doctor validation of AI diagnosis
 """
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -9,6 +9,7 @@ from datetime import datetime
 from app.models.response_models import SuccessResponse
 from app.database.mysql_connection import get_connection
 from app.utils.auth_helper import require_role
+from app.services.feedback_learning_service import get_feedback_learning_service
 
 security = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
@@ -78,9 +79,19 @@ def submit_diagnostic_feedback(
         valide = feedback_data.get('valide', False)
         logger.info(f"✅ Feedback saved: consultation={consultation_id}, valide={valide}")
 
+        # Update learning adjustments (non-blocking — failure never breaks the response)
+        try:
+            get_feedback_learning_service().record_feedback(
+                diagnostic_ia=feedback_data.get('diagnostic_ia', ''),
+                valide=bool(valide),
+                diagnostic_final=feedback_data.get('diagnostic_final'),
+            )
+        except Exception as le:
+            logger.warning(f"Feedback learning update skipped: {le}")
+
         return SuccessResponse(
             success=True,
-            message="Diagnostic final enregistré" if valide else "Feedback enregistré pour réentraînement",
+            message="Diagnostic final enregistré" if valide else "Feedback enregistré — modèle mis à jour",
             data={
                 "id": feedback_id,
                 "valide": valide,
@@ -99,9 +110,7 @@ def submit_diagnostic_feedback(
 def get_feedback_stats(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """
-    Stats on doctor validation rates (for admin/monitoring)
-    """
+    """Stats on doctor validation rates (for admin/monitoring)"""
     try:
         require_role(credentials, ['medecin', 'administrateur'])
 
@@ -128,6 +137,50 @@ def get_feedback_stats(
                 "rejected": rejected,
                 "validation_rate": round(validated / total * 100, 1) if total > 0 else 0
             }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/adjustments")
+def get_score_adjustments(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Top-50 per-disease score adjustments learned from doctor feedback.
+    Positive = confirmed frequently. Negative = rejected frequently.
+    """
+    try:
+        require_role(credentials, ['medecin', 'administrateur'])
+        rows = get_feedback_learning_service().get_all_adjustments()
+        return SuccessResponse(
+            success=True,
+            message=f"{len(rows)} ajustement(s) appris",
+            data={"adjustments": rows}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rebuild-adjustments")
+def rebuild_adjustments(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Rebuild score adjustments table from all historical feedback.
+    Use once to backfill existing diagnostic_feedback records.
+    """
+    try:
+        require_role(credentials, ['administrateur'])
+        result = get_feedback_learning_service().rebuild_from_history()
+        return SuccessResponse(
+            success=True,
+            message="Ajustements reconstruits depuis l'historique",
+            data=result
         )
     except HTTPException:
         raise

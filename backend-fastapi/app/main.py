@@ -10,7 +10,7 @@ import time
 
 from app.config import settings
 from app.routes import diagnostic, maladies, patients, auth, metadata, consultations
-from app.routes import diagnostics_history, vitals, feedback
+from app.routes import diagnostics_history, vitals, feedback, admin
 from app.services.preprocessing_service import get_dataset_loader
 from app.services.exam_classifier_service import get_exam_classifier
 from app.services.symptom_normalizer_service import get_symptom_normalizer
@@ -182,6 +182,7 @@ app.include_router(consultations.router, prefix="/api/v1")
 app.include_router(diagnostics_history.router, prefix="/api/v1")
 app.include_router(vitals.router, prefix="/api/v1")
 app.include_router(feedback.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 
 
 # Root endpoint

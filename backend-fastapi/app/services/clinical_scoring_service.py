@@ -27,7 +27,7 @@ class ScoreCliniqueManager:
     # ── Alvarado (appendicite) ─────────────────────────────────────────────
     _ALVARADO_TRIGGERS = ['appendicite', 'appendicite aiguë', 'appendicite aigue']
 
-    def _alvarado(self, symptoms: List[str]) -> int:
+    def _alvarado(self, symptoms: List[str], analyses: dict = None) -> int:
         score = 0
         if _matches('douleur fosse iliaque droite', symptoms) or _matches('migration douleur', symptoms):
             score += 1
@@ -41,6 +41,19 @@ class ScoreCliniqueManager:
             score += 1
         if _matches('fièvre', symptoms) or _matches('fievre', symptoms) or _matches('hyperthermie', symptoms):
             score += 1
+        # Leucocytose > 10 G/L (+2 pts) — critère biologique officiel Alvarado
+        if analyses:
+            for key in ('Globules blancs', 'Leucocytes', 'NFS', 'Numération formule sanguine'):
+                val = analyses.get(key)
+                if val is not None:
+                    try:
+                        if float(val) > 10.0:
+                            score += 2
+                    except (ValueError, TypeError):
+                        pass
+                    break
+        elif _matches('hyperleucocytose', symptoms) or _matches('leucocytose', symptoms):
+            score += 2
         return score
 
     # ── Wells TVP ──────────────────────────────────────────────────────────
@@ -102,12 +115,12 @@ class ScoreCliniqueManager:
         return score
 
     # ── Main ───────────────────────────────────────────────────────────────
-    def compute_boost(self, disease_name: str, symptoms: List[str], age: int) -> float:
+    def compute_boost(self, disease_name: str, symptoms: List[str], age: int, analyses: dict = None) -> float:
         """Return a score boost (0.0–20.0) if a validated clinical score is elevated."""
         dn = disease_name.lower()
 
         if any(t in dn for t in self._ALVARADO_TRIGGERS):
-            sc = self._alvarado(symptoms)
+            sc = self._alvarado(symptoms, analyses=analyses)
             logger.debug(f"Alvarado score for '{disease_name}': {sc}")
             if sc >= 7:
                 return 20.0
