@@ -12,6 +12,7 @@ import { Diagnostics, Statistics } from '@/features/clinical-engine'
 import Dashboard from '@/pages/Dashboard'
 import Settings from '@/pages/Settings'
 import AdminUsers from '@/pages/AdminUsers'
+import AdminDataset from '@/pages/AdminDataset'
 
 export function AppRoutes() {
   return (
@@ -62,6 +63,9 @@ export function AppRoutes() {
         {/* Admin only */}
         <Route path="/admin/users" element={
           <ProtectedRoute requiredRole="administrateur"><AdminUsers /></ProtectedRoute>
+        } />
+        <Route path="/admin/dataset" element={
+          <ProtectedRoute requiredRole="administrateur"><AdminDataset /></ProtectedRoute>
         } />
       </Route>
 

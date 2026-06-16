@@ -196,12 +196,26 @@ export function Patients() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5">
-                        <p className="text-sm font-semibold text-slate-900 leading-none">
-                          {patient.prenom} {patient.nom}
-                        </p>
-                        {patient.email && (
-                          <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[180px]">{patient.email}</p>
-                        )}
+                        <div className="flex items-center gap-3">
+                          {(() => {
+                            const initials = ((patient.prenom?.[0] || '') + (patient.nom?.[0] || '')).toUpperCase() || '?'
+                            const colors = ['bg-blue-100 text-blue-700', 'bg-violet-100 text-violet-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700']
+                            const color = colors[patient.id % colors.length]
+                            return (
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${color}`}>
+                                {initials}
+                              </div>
+                            )
+                          })()}
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 leading-none">
+                              {patient.prenom} {patient.nom}
+                            </p>
+                            {patient.email && (
+                              <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px]">{patient.email}</p>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <span className="text-sm text-slate-700">{calculateAge(patient.date_naissance)} ans</span>

@@ -182,6 +182,135 @@ def get_weekly_stats():
         )
 
 
+@router.get("/monthly")
+def get_monthly_stats():
+    """Activité des 30 derniers jours, regroupée par semaine."""
+    try:
+        from datetime import date, timedelta
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        today = date.today()
+        weeks = []
+        for week_back in range(3, -1, -1):
+            start = today - timedelta(days=(week_back + 1) * 7 - 1)
+            end   = today - timedelta(days=week_back * 7)
+            label = f"S-{week_back}" if week_back > 0 else "Cette sem."
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM consultations WHERE DATE(date_consultation) BETWEEN %s AND %s",
+                (start.isoformat(), end.isoformat()),
+            )
+            consult_count = cursor.fetchone()[0]
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM diagnostics WHERE DATE(created_at) BETWEEN %s AND %s",
+                (start.isoformat(), end.isoformat()),
+            )
+            diag_count = cursor.fetchone()[0]
+
+            weeks.append({
+                "label": label,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "consultations": consult_count,
+                "diagnostics": diag_count,
+            })
+
+        conn.close()
+        return SuccessResponse(success=True, message="Activité mensuelle", data=weeks)
+    except Exception as e:
+        logger.error(f"Error getting monthly stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/top-symptoms")
+def get_top_symptoms(limit: int = Query(10, ge=1, le=30)):
+    """Symptômes les plus fréquemment saisis dans les consultations."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symptomes FROM consultations WHERE symptomes IS NOT NULL AND symptomes != '[]'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        from collections import Counter
+        counter = Counter()
+        for row in rows:
+            try:
+                symptoms = json.loads(row["symptomes"] or "[]")
+                for s in symptoms:
+                    if s and isinstance(s, str):
+                        counter[s.strip()] += 1
+            except Exception:
+                pass
+
+        top = [{"symptome": s, "total": c} for s, c in counter.most_common(limit)]
+        return SuccessResponse(success=True, message=f"{len(top)} symptômes", data=top)
+    except Exception as e:
+        logger.error(f"Error getting top symptoms: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/urgency-distribution")
+def get_urgency_distribution():
+    """Distribution des niveaux d'urgence parmi les diagnostics enregistrés."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT resultats FROM diagnostics WHERE resultats IS NOT NULL AND resultats != '[]'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        from collections import Counter
+        counter = Counter()
+        for row in rows:
+            try:
+                resultats = json.loads(row["resultats"] or "[]")
+                if resultats and isinstance(resultats, list):
+                    urgence = resultats[0].get("urgence", "inconnue") or "inconnue"
+                    counter[urgence] += 1
+            except Exception:
+                pass
+
+        order = ["critique", "élevée", "modérée", "faible", "inconnue"]
+        data = [{"urgence": u, "total": counter[u]} for u in order if counter[u] > 0]
+        return SuccessResponse(success=True, message="Distribution urgences", data=data)
+    except Exception as e:
+        logger.error(f"Error getting urgency distribution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/score-distribution")
+def get_score_distribution():
+    """Distribution des scores de confiance (par tranches de 20%)."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT resultats FROM diagnostics WHERE resultats IS NOT NULL AND resultats != '[]'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        buckets = {"0-20": 0, "20-40": 0, "40-60": 0, "60-80": 0, "80-100": 0}
+        for row in rows:
+            try:
+                resultats = json.loads(row["resultats"] or "[]")
+                if resultats and isinstance(resultats, list):
+                    score = resultats[0].get("score", 0) or 0
+                    if score < 20:      buckets["0-20"] += 1
+                    elif score < 40:    buckets["20-40"] += 1
+                    elif score < 60:    buckets["40-60"] += 1
+                    elif score < 80:    buckets["60-80"] += 1
+                    else:               buckets["80-100"] += 1
+            except Exception:
+                pass
+
+        data = [{"range": k, "total": v} for k, v in buckets.items() if v > 0]
+        return SuccessResponse(success=True, message="Distribution scores", data=data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stats")
 def get_diagnostics_global_stats():
     """

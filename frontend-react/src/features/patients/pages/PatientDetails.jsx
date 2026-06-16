@@ -389,62 +389,94 @@ export function PatientDetails() {
   const lastVital  = vitalsHistory[0]
   const lastConsult = consultations[0]
 
+  const initials = ((patient.prenom?.[0] || '') + (patient.nom?.[0] || '')).toUpperCase() || '?'
+  const avatarColors = ['bg-blue-600', 'bg-violet-600', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-500']
+  const avatarColor  = avatarColors[patient.id % avatarColors.length]
+
   return (
     <div className="space-y-5">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/patients')}
-          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-slate-900">{patient.prenom} {patient.nom}</h1>
-            <span className="font-mono text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg">
-              {patient.code_patient}
-            </span>
-            <Badge variant={patient.sexe === 'M' ? 'info' : 'default'}>
-              {patient.sexe === 'M' ? 'Homme' : 'Femme'} · {calculateAge(patient.date_naissance)} ans
-            </Badge>
+      {/* ── Hero header ────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #2563eb 100%)' }}
+          className="px-6 pt-6 pb-5">
+          <div className="flex items-start gap-5">
+            <button onClick={() => navigate('/patients')}
+              className="mt-1 p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors shrink-0">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className={`w-14 h-14 rounded-2xl ${avatarColor} flex items-center justify-center text-white text-xl font-black shadow-lg shrink-0`}>
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl font-extrabold text-white tracking-tight">
+                  {patient.prenom} {patient.nom}
+                </h1>
+                <span className="font-mono text-xs bg-white/10 text-white/80 border border-white/15 px-2.5 py-1 rounded-lg">
+                  {patient.code_patient}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 mt-2 flex-wrap">
+                <span className="flex items-center gap-1.5 text-xs text-blue-200/70">
+                  <User className="w-3 h-3" />
+                  {patient.sexe === 'M' ? 'Homme' : 'Femme'} · {calculateAge(patient.date_naissance)} ans
+                </span>
+                {patient.groupe_sanguin && (
+                  <span className="flex items-center gap-1.5 text-xs text-red-300">
+                    <Droplet className="w-3 h-3" />
+                    {patient.groupe_sanguin}
+                  </span>
+                )}
+                {patient.telephone && (
+                  <span className="flex items-center gap-1.5 text-xs text-blue-200/70">
+                    <Phone className="w-3 h-3" />
+                    {patient.telephone}
+                  </span>
+                )}
+                {patient.allergies && (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-red-300 bg-red-500/15 border border-red-400/20 px-2 py-0.5 rounded-full">
+                    <AlertCircle className="w-3 h-3" />
+                    Allergies connues
+                  </span>
+                )}
+              </div>
+            </div>
+            {isDoctor && (
+              <Link to="/consultation" state={{ patientCode: patient.code_patient }} className="shrink-0">
+                <button className="flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 text-sm font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm">
+                  <Stethoscope className="w-4 h-4" />
+                  Consultation
+                </button>
+              </Link>
+            )}
           </div>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {isNurse ? 'Suivi infirmier' : 'Dossier patient complet'}
-          </p>
         </div>
-        {isDoctor && (
-          <Link to="/consultation" state={{ patientCode: patient.code_patient }}>
-            <Button variant="primary">
-              <Stethoscope className="w-4 h-4" />
-              Nouvelle consultation
-            </Button>
-          </Link>
-        )}
-      </div>
 
-      {/* ── Tab bar ────────────────────────────────────────────────────────── */}
-      <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-none">
-        {TABS.map(({ id: tabId, label, icon: Icon }) => (
-          <button key={tabId} onClick={() => setActiveTab(tabId)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tabId
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-            {tabId === 'consultations' && consultations.length > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tabId ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                {consultations.length}
-              </span>
-            )}
-            {tabId === 'constantes' && vitalsHistory.length > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tabId ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                {vitalsHistory.length}
-              </span>
-            )}
-          </button>
-        ))}
+        {/* ── Tab bar ── */}
+        <div className="flex border-t border-slate-100 overflow-x-auto scrollbar-none px-2">
+          {TABS.map(({ id: tabId, label, icon: Icon }) => (
+            <button key={tabId} onClick={() => setActiveTab(tabId)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                activeTab === tabId
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+              {tabId === 'consultations' && consultations.length > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === tabId ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {consultations.length}
+                </span>
+              )}
+              {tabId === 'constantes' && vitalsHistory.length > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === tabId ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {vitalsHistory.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── RÉSUMÉ ─────────────────────────────────────────────────────────── */}

@@ -344,121 +344,238 @@ function StepBar({ step }) {
 
 // ─── PDF generation ──────────────────────────────────────────────────────────
 function generatePDF({ patient, motif, symptoms, analyses, diagnostics, finalDiag, notes, medecin, validated }) {
-  const printWin = window.open('', '_blank', 'width=800,height=900')
-  const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const topAlt = (diagnostics || []).slice(1, 4)
+  const printWin = window.open('', '_blank', 'width=860,height=1050')
+  const dateStr = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const timeStr = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  const URGENCY_COLORS = {
+    critique: { bg:'#fef2f2', border:'#fca5a5', text:'#b91c1c', dot:'#ef4444' },
+    élevée:   { bg:'#fff7ed', border:'#fdba74', text:'#c2410c', dot:'#f97316' },
+    modérée:  { bg:'#fffbeb', border:'#fcd34d', text:'#b45309', dot:'#f59e0b' },
+    faible:   { bg:'#f0fdf4', border:'#86efac', text:'#15803d', dot:'#22c55e' },
+  }
+  const urg  = URGENCY_COLORS[finalDiag?.urgence] || { bg:'#f8fafc', border:'#e2e8f0', text:'#475569', dot:'#94a3b8' }
+  const initials = patient
+    ? ((patient.prenom?.[0] || '') + (patient.nom?.[0] || '')).toUpperCase()
+    : '?'
 
-  printWin.document.write(`<!DOCTYPE html><html lang="fr"><head>
+  printWin.document.write(`<!DOCTYPE html><html lang="fr">
+<head>
 <meta charset="UTF-8">
-<title>Rapport médical</title>
+<title>Rapport médical — ${patient ? patient.prenom + ' ' + patient.nom : 'Consultation'}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
+  @page { size:A4; margin:0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: Arial, sans-serif; font-size:13px; color:#1e293b; padding:40px; }
-  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:20px; border-bottom:2px solid #2563eb; margin-bottom:24px; }
-  .logo { font-size:22px; font-weight:800; color:#2563eb; }
-  .logo-sub { font-size:11px; color:#64748b; margin-top:2px; }
-  .date-block { text-align:right; font-size:12px; color:#64748b; }
-  h2 { font-size:15px; font-weight:700; color:#1e293b; margin-bottom:12px; border-left:3px solid #2563eb; padding-left:10px; }
-  .section { margin-bottom:20px; }
-  .field { display:flex; gap:8px; margin-bottom:6px; font-size:13px; }
-  .field-label { font-weight:600; color:#475569; min-width:120px; }
-  .pill { display:inline-block; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:20px; padding:2px 10px; font-size:12px; margin:2px; }
-  .diag-card { border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:8px; }
-  .diag-card.first { border-color:#bfdbfe; background:#eff6ff; }
-  .diag-name { font-weight:700; font-size:14px; }
-  .diag-meta { display:flex; gap:12px; font-size:12px; color:#64748b; margin-top:4px; }
-  .score-bar { height:6px; background:#e2e8f0; border-radius:3px; margin-top:8px; }
-  .score-fill { height:100%; background:#2563eb; border-radius:3px; }
-  .final-box { background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:14px; margin-bottom:16px; }
-  .final-title { font-weight:700; color:#16a34a; font-size:15px; }
-  .notes-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; font-size:13px; }
-  .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:12px; color:#94a3b8; }
-  .warning { background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:10px 14px; font-size:12px; color:#92400e; margin-top:16px; }
-  @media print { body { padding:20px; } }
+  body { font-family:'Inter','Segoe UI',Arial,sans-serif; font-size:11px; color:#1a2332; background:#fff; }
+
+  /* ── Header ── */
+  .hdr { background:linear-gradient(135deg,#0f2557 0%,#1e3a8a 45%,#2563eb 100%); padding:22px 40px 18px; color:white; }
+  .hdr-inner { display:flex; justify-content:space-between; align-items:center; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand-icon { width:40px; height:40px; background:rgba(255,255,255,0.13); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:white; border:1px solid rgba(255,255,255,0.15); }
+  .brand-name { font-size:19px; font-weight:800; letter-spacing:-0.5px; }
+  .brand-sub { font-size:8px; opacity:0.55; text-transform:uppercase; letter-spacing:2px; margin-top:1px; }
+  .doc-meta { text-align:right; }
+  .doc-type { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:2px; opacity:0.9; }
+  .doc-date { font-size:10px; opacity:0.55; margin-top:3px; }
+  .doc-dr   { font-size:11px; font-weight:700; margin-top:3px; opacity:0.8; }
+
+  /* ── Info strip ── */
+  .strip { background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:8px 40px; display:flex; align-items:center; gap:22px; }
+  .strip-item {}
+  .sl { font-size:7.5px; text-transform:uppercase; letter-spacing:0.9px; color:#94a3b8; font-weight:700; margin-bottom:1px; }
+  .sv { font-size:11px; font-weight:700; color:#1e293b; }
+  .ssep { width:1px; height:24px; background:#e2e8f0; }
+
+  /* ── Confidential banner ── */
+  .confid { background:#fef3c7; border-bottom:1px solid #fde68a; padding:4px 40px; font-size:9px; color:#78350f; font-weight:700; letter-spacing:0.3px; }
+
+  /* ── Body ── */
+  .body { padding:20px 40px 8px; }
+  .section { margin-bottom:16px; }
+  .section-hd { display:flex; align-items:center; gap:7px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; }
+  .accent { width:3px; height:14px; background:#2563eb; border-radius:2px; flex-shrink:0; }
+  .section-hd h2 { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#1e40af; }
+
+  /* ── Patient card ── */
+  .pt-card { border:1.5px solid #dbeafe; border-radius:8px; overflow:hidden; }
+  .pt-hd { background:linear-gradient(90deg,#eff6ff,#dbeafe); padding:10px 14px; border-bottom:1px solid #bfdbfe; display:flex; align-items:center; gap:10px; }
+  .avatar { width:34px; height:34px; border-radius:50%; background:#2563eb; color:white; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .pt-name { font-size:14px; font-weight:800; color:#1e3a8a; }
+  .pt-code { font-family:monospace; font-size:9.5px; color:#3b82f6; margin-top:1px; }
+  .pt-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; }
+  .pg { padding:8px 14px; border-right:1px solid #e2e8f0; }
+  .pg:nth-child(4n), .pg:last-child { border-right:none; }
+  .pgl { font-size:7.5px; text-transform:uppercase; letter-spacing:0.8px; color:#94a3b8; font-weight:700; margin-bottom:2px; }
+  .pgv { font-size:11px; font-weight:600; color:#1e293b; }
+  .allergy { padding:7px 14px; background:#fef2f2; border-top:1px solid #fecaca; display:flex; align-items:center; gap:6px; font-size:10px; color:#dc2626; font-weight:700; }
+
+  /* ── Motif ── */
+  .motif-box { background:#f8fafc; border:1px solid #e2e8f0; border-left:3px solid #2563eb; border-radius:0 6px 6px 0; padding:9px 12px; font-size:11px; line-height:1.55; color:#334155; }
+
+  /* ── Pills ── */
+  .pills { display:flex; flex-wrap:wrap; gap:4px; }
+  .pill { display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px; font-size:9.5px; font-weight:600; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; }
+  .pill-a { background:#f0fdf4; border-color:#86efac; color:#15803d; }
+
+  /* ── Analyses table ── */
+  .tbl { width:100%; border-collapse:collapse; font-size:10px; }
+  .tbl th { background:#f8fafc; padding:5px 10px; text-align:left; font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; border-bottom:1px solid #e2e8f0; }
+  .tbl td { padding:5px 10px; border-bottom:1px solid #f1f5f9; }
+  .tbl tr:last-child td { border-bottom:none; }
+  .ok  { color:#16a34a; font-weight:700; }
+  .nok { color:#dc2626; font-weight:700; }
+
+  /* ── Diagnostic principal ── */
+  .diag-main { border-radius:10px; overflow:hidden; border:1.5px solid #bfdbfe; margin-bottom:10px; }
+  .diag-hd { background:linear-gradient(90deg,#0f2557,#1e40af); padding:14px 18px; color:white; }
+  .diag-rank { font-size:8px; text-transform:uppercase; letter-spacing:2px; opacity:0.55; margin-bottom:4px; font-weight:700; }
+  .diag-name { font-size:17px; font-weight:800; letter-spacing:-0.3px; line-height:1.2; }
+  .diag-badges { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:9.5px; font-weight:700; border:1px solid; }
+  .badge-ok  { background:rgba(16,185,129,0.2); border-color:rgba(16,185,129,0.35); color:#6ee7b7; }
+  .badge-alt { background:rgba(245,158,11,0.2);  border-color:rgba(245,158,11,0.35);  color:#fcd34d; }
+  /* ── Notes ── */
+  .notes-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; font-size:10.5px; color:#334155; line-height:1.6; white-space:pre-wrap; }
+
+  /* ── Disclaimer ── */
+  .disclaimer { margin:14px 40px 0; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:9px 14px; font-size:9.5px; color:#78350f; line-height:1.5; }
+
+  /* ── Footer ── */
+  .footer { margin-top:14px; padding:10px 40px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; font-size:9px; color:#94a3b8; }
+  .sig { display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+  .sig-line { width:110px; height:1px; background:#e2e8f0; margin-bottom:3px; }
+
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
 </style>
-</head><body>
-<div class="header">
-  <div>
-    <div class="logo">MediDiag</div>
-    <div class="logo-sub">Système de diagnostic médical assisté par IA</div>
-  </div>
-  <div class="date-block">
-    <div style="font-weight:700;font-size:14px">RAPPORT DE CONSULTATION</div>
-    <div>${date}</div>
-    ${medecin ? `<div>Dr. ${medecin.prenom} ${medecin.nom}</div>` : ''}
-    ${medecin?.specialite ? `<div>${medecin.specialite}</div>` : ''}
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-inner">
+    <div class="brand">
+      <div class="brand-icon">+</div>
+      <div>
+        <div class="brand-name">MediDiag</div>
+        <div class="brand-sub">Système hospitalier de diagnostic assisté par IA</div>
+      </div>
+    </div>
+    <div class="doc-meta">
+      <div class="doc-type">Rapport de consultation</div>
+      <div class="doc-date">${dateStr} &nbsp;·&nbsp; ${timeStr}</div>
+      ${medecin ? `<div class="doc-dr">Dr. ${medecin.prenom} ${medecin.nom}</div>` : ''}
+    </div>
   </div>
 </div>
 
+<div class="strip">
+  ${medecin ? `<div class="strip-item"><div class="sl">Médecin traitant</div><div class="sv">Dr. ${medecin.prenom} ${medecin.nom}</div></div><div class="ssep"></div>` : ''}
+  <div class="strip-item"><div class="sl">Date</div><div class="sv">${new Date().toLocaleDateString('fr-FR')}</div></div>
+  <div class="ssep"></div>
+  <div class="strip-item"><div class="sl">Référence patient</div><div class="sv">${patient?.code_patient || 'Anonyme'}</div></div>
+  <div class="ssep"></div>
+  <div class="strip-item"><div class="sl">Rapport généré</div><div class="sv">${new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}</div></div>
+</div>
+
+<div class="confid">DOCUMENT CONFIDENTIEL — Réservé aux professionnels de santé autorisés — Ne pas diffuser</div>
+
+<div class="body">
+
+<!-- PATIENT -->
 <div class="section">
-  <h2>Informations patient</h2>
+  <div class="section-hd"><div class="accent"></div><h2>Identité du patient</h2></div>
   ${patient ? `
-  <div class="field"><span class="field-label">Nom complet</span><span>${patient.prenom} ${patient.nom}</span></div>
-  <div class="field"><span class="field-label">Code patient</span><span style="font-family:monospace">${patient.code_patient || '—'}</span></div>
-  <div class="field"><span class="field-label">Date de naissance</span><span>${patient.date_naissance ? new Date(patient.date_naissance).toLocaleDateString('fr-FR') : '—'}</span></div>
-  <div class="field"><span class="field-label">Sexe</span><span>${patient.sexe === 'M' ? 'Masculin' : 'Féminin'}</span></div>
-  ${patient.allergies ? `<div class="field"><span class="field-label" style="color:#dc2626">⚠ Allergies</span><span style="color:#dc2626;font-weight:600">${patient.allergies}</span></div>` : ''}
-  ` : '<p style="color:#64748b">Consultation anonyme</p>'}
+  <div class="pt-card">
+    <div class="pt-hd">
+      <div class="avatar">${initials}</div>
+      <div>
+        <div class="pt-name">${patient.prenom} ${patient.nom}</div>
+        <div class="pt-code">${patient.code_patient || 'Code non assigné'}</div>
+      </div>
+    </div>
+    <div class="pt-grid">
+      <div class="pg"><div class="pgl">Date de naissance</div><div class="pgv">${patient.date_naissance ? new Date(patient.date_naissance).toLocaleDateString('fr-FR') : '—'}</div></div>
+      <div class="pg"><div class="pgl">Sexe</div><div class="pgv">${patient.sexe === 'M' ? 'Masculin' : 'Féminin'}</div></div>
+      <div class="pg"><div class="pgl">Groupe sanguin</div><div class="pgv">${patient.groupe_sanguin || '—'}</div></div>
+      <div class="pg"><div class="pgl">Téléphone</div><div class="pgv">${patient.telephone || '—'}</div></div>
+    </div>
+    ${patient.allergies ? `<div class="allergy">ALLERGIE CONNUE &mdash; ${patient.allergies}</div>` : ''}
+  </div>` : `<p style="font-size:11px;color:#64748b;font-style:italic">Consultation anonyme — aucun dossier patient associé</p>`}
 </div>
 
+<!-- MOTIF -->
 <div class="section">
-  <h2>Motif de consultation</h2>
-  <p>${motif || 'Non renseigné'}</p>
+  <div class="section-hd"><div class="accent"></div><h2>Motif de consultation</h2></div>
+  <div class="motif-box">${motif || 'Non renseigné'}</div>
 </div>
 
+<!-- SYMPTOMES -->
 <div class="section">
-  <h2>Symptômes présentés</h2>
-  <div>${(symptoms || []).map(s => `<span class="pill">${s}</span>`).join('')}</div>
+  <div class="section-hd"><div class="accent"></div><h2>Symptômes présentés (${(symptoms || []).length})</h2></div>
+  <div class="pills">
+    ${(symptoms || []).map(s => `<span class="pill">${s}</span>`).join('')}
+    ${(symptoms || []).length === 0 ? '<span style="font-size:11px;color:#94a3b8;font-style:italic">Aucun symptôme renseigné</span>' : ''}
+  </div>
 </div>
 
+<!-- ANALYSES -->
 ${Object.keys(analyses || {}).length > 0 ? `
 <div class="section">
-  <h2>Analyses biologiques</h2>
-  <div>${Object.keys(analyses).map(a => `<span class="pill">${a}</span>`).join('')}</div>
+  <div class="section-hd"><div class="accent"></div><h2>Résultats biologiques et examens (${Object.keys(analyses).length})</h2></div>
+  <table class="tbl">
+    <thead><tr><th>Examen / Analyse</th><th>Résultat</th><th>Interprétation</th></tr></thead>
+    <tbody>
+      ${Object.entries(analyses).map(([name, val]) => {
+        const strVal = String(val || '').trim()
+        const abnormal = strVal.toLowerCase().includes('positif') || strVal.toLowerCase().includes('anormal') || strVal.toLowerCase().includes('anomalie') || strVal.toLowerCase().includes('détecté')
+        return `<tr><td style="font-weight:600">${name}</td><td>${strVal || '—'}</td><td class="${abnormal ? 'nok' : 'ok'}">${abnormal ? 'Anormal' : (strVal ? 'Normal / Renseigné' : 'Non réalisé')}</td></tr>`
+      }).join('')}
+    </tbody>
+  </table>
 </div>` : ''}
 
+<!-- DIAGNOSTIC RETENU -->
 <div class="section">
-  <h2>Diagnostic final validé par le médecin</h2>
+  <div class="section-hd"><div class="accent"></div><h2>Diagnostic retenu</h2></div>
   ${finalDiag ? `
-  <div class="final-box" style="margin-bottom:12px">
-    <div class="final-title" style="font-size:17px">${finalDiag.maladie}</div>
-    ${finalDiag.score != null ? `<div style="margin-top:4px;color:#15803d;font-size:13px">Score de confiance IA : ${Math.round(finalDiag.score)}%</div>` : ''}
-    <div style="font-size:12px;color:#16a34a;margin-top:2px">${validated ? 'Confirmé par le médecin' : 'Diagnostic alternatif proposé par le médecin'}</div>
-  </div>` : '<p style="color:#64748b">Non renseigné</p>'}
-  ${topAlt.length > 0 ? `
-  <p style="font-size:11px;color:#94a3b8;margin-top:10px;margin-bottom:6px">Autres hypothèses analysées par l'IA :</p>
-  ${topAlt.map(d => `
-  <div class="diag-card" style="opacity:0.6">
-    <div style="display:flex;justify-content:space-between">
-      <span class="diag-name" style="font-size:13px">${d.maladie}</span>
-      <span style="font-size:12px;color:#64748b">${formatScore(d.score)}</span>
+  <div class="diag-main">
+    <div class="diag-hd">
+      <div class="diag-rank">Diagnostic principal retenu</div>
+      <div class="diag-name">${finalDiag.maladie}</div>
+      <div class="diag-badges">
+        ${finalDiag.urgence ? `<span class="badge" style="background:${urg.bg}22;border-color:${urg.dot}50;color:${urg.dot}">Urgence : ${finalDiag.urgence}</span>` : ''}
+        ${validated ? `<span class="badge badge-ok">Confirmé par le médecin</span>` : `<span class="badge badge-alt">Diagnostic alternatif proposé</span>`}
+      </div>
     </div>
-  </div>`).join('')}` : ''}
+  </div>
+  ` : `<p style="font-size:11px;color:#64748b;font-style:italic">Diagnostic non renseigné</p>`}
 </div>
 
-${finalDiag ? `
-<div class="section">
-  <div class="final-box">
-    <div class="final-title">✓ Diagnostic final validé par le médecin</div>
-    <div style="margin-top:6px;font-size:14px">${finalDiag.maladie} — Score : ${formatScore(finalDiag.score)}</div>
-    <div style="font-size:12px;color:#16a34a;margin-top:2px">${validated ? 'Confirmé (dans la marge IA ±15%)' : 'Diagnostic alternatif proposé'}</div>
-  </div>
-</div>` : ''}
-
+<!-- NOTES -->
 ${notes ? `
 <div class="section">
-  <h2>Notes du médecin</h2>
+  <div class="section-hd"><div class="accent"></div><h2>Observations et notes du médecin</h2></div>
   <div class="notes-box">${notes}</div>
 </div>` : ''}
 
-<div class="warning">
-  ⚠️ Avertissement : Ce rapport est une aide à la décision médicale basée sur l'intelligence artificielle. Il ne remplace
-  pas un examen clinique complet ni le jugement d'un professionnel de santé qualifié.
+</div>
+
+<div class="disclaimer">
+  Avertissement médico-légal : Ce rapport est une aide à la décision clinique produite par un système d'intelligence artificielle (précision validée à 90,7 %). Il ne se substitue pas au jugement clinique du praticien, ni à un examen médical complet. Toute décision thérapeutique demeure sous la responsabilité exclusive du professionnel de santé.
 </div>
 
 <div class="footer">
-  <span>MediDiag — Rapport généré le ${new Date().toLocaleString('fr-FR')}</span>
-  <span>Confidentiel — Dossier médical</span>
+  <div>
+    <div>MediDiag &mdash; Rapport généré le ${new Date().toLocaleString('fr-FR')}</div>
+    <div style="margin-top:2px">Réf. patient : ${patient?.code_patient || 'Anonyme'} &nbsp;|&nbsp; Usage professionnel uniquement</div>
+  </div>
+  <div class="sig">
+    <div class="sig-line"></div>
+    <div>Signature &amp; cachet du médecin</div>
+    ${medecin ? `<div style="font-weight:700;color:#1e293b;margin-top:1px">Dr. ${medecin.prenom} ${medecin.nom}</div>` : ''}
+  </div>
 </div>
 
 <script>window.onload = () => window.print()</script>
@@ -967,8 +1084,12 @@ export function Consultation() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-5">
             {/* Patient selection */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-4">Patient</h2>
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2.5 rounded-t-2xl">
+                <span className="w-1 h-4 rounded-full bg-blue-500 shrink-0" />
+                <h2 className="text-sm font-bold text-slate-800">Patient</h2>
+              </div>
+              <div className="p-5">
               {!selectedPatient ? (
                 <div className="space-y-3" ref={patientDropdownRef}>
                   {/* Combobox */}
@@ -1066,12 +1187,16 @@ export function Consultation() {
                   </button>
                 </div>
               )}
-            </div>
+            </div></div>
 
             {/* Age + sexe if no patient */}
             {!selectedPatient && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <h2 className="text-sm font-semibold text-slate-800 mb-4">Données patient</h2>
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2.5">
+                  <span className="w-1 h-4 rounded-full bg-violet-500 shrink-0" />
+                  <h2 className="text-sm font-bold text-slate-800">Données patient</h2>
+                </div>
+                <div className="p-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1.5">Âge</label>
@@ -1095,15 +1220,19 @@ export function Consultation() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div></div>
             )}
 
             {/* Motif */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-3">
-                Motif de consultation <span className="text-red-500">*</span>
-                {parsingMotif && <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-indigo-400" />}
-              </h2>
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2.5">
+                <span className="w-1 h-4 rounded-full bg-emerald-500 shrink-0" />
+                <h2 className="text-sm font-bold text-slate-800">
+                  Motif de consultation <span className="text-red-500">*</span>
+                  {parsingMotif && <Loader2 className="inline-block w-3 h-3 ml-2 animate-spin text-indigo-400" />}
+                </h2>
+              </div>
+              <div className="p-5">
               <textarea
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 rows={3}
@@ -1196,16 +1325,20 @@ export function Consultation() {
                   )}
                 </div>
               )}
-            </div>
+            </div></div>
           </div>
 
           <div className="space-y-5">
             {/* Symptoms */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-3">
-                Symptômes <span className="text-red-500">*</span>
-                {symptoms.length > 0 && <span className="ml-1 text-indigo-600">({symptoms.length})</span>}
-              </h2>
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2.5 rounded-t-2xl">
+                <span className="w-1 h-4 rounded-full bg-indigo-500 shrink-0" />
+                <h2 className="text-sm font-bold text-slate-800">
+                  Symptômes <span className="text-red-500">*</span>
+                  {symptoms.length > 0 && <span className="ml-1 text-indigo-500 font-normal">({symptoms.length} saisis)</span>}
+                </h2>
+              </div>
+              <div className="p-5">
               <Autocomplete
                 placeholder="Rechercher un symptôme..."
                 suggestions={symptomsSuggestions}
@@ -1231,7 +1364,7 @@ export function Consultation() {
                   ))}
                 </div>
               )}
-            </div>
+            </div></div>
 
             <Button
               variant="primary"
@@ -1250,7 +1383,7 @@ export function Consultation() {
       {/* ── STEP 1: Diagnostic préliminaire ─────────────────────────────── */}
       {step === 1 && (
         <div className="space-y-5">
-          <div className="bg-white rounded-xl border border-slate-200">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-slate-800">Diagnostic préliminaire</h2>
@@ -1288,8 +1421,8 @@ export function Consultation() {
 
             {/* Left — results entry (wider) */}
             <div className="xl:col-span-3 space-y-4">
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-xl">
                   <div>
                     <h2 className="text-sm font-semibold text-slate-800">Résultats des analyses</h2>
                     <p className="text-xs text-slate-400 mt-0.5">Saisissez les valeurs du laboratoire</p>
