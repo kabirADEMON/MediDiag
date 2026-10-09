@@ -1,9 +1,15 @@
 """
 Configuration settings for the Medical Diagnostic API
 """
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import List
 import os
+
+# Valeur d'exemple : acceptée en développement seulement. Quiconque lit ce code la connaît,
+# donc elle permettrait de fabriquer un jeton de session valide pour n'importe quel rôle.
+DEFAULT_SECRET_KEY = "your-secret-key-change-this-in-production-min-32-characters"
+LOCAL_ENVIRONMENTS = {"development", "dev", "local", "test", "testing"}
 
 
 class Settings(BaseSettings):
@@ -27,7 +33,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = ""
 
     # Security
-    SECRET_KEY: str = "your-secret-key-change-this-in-production-min-32-characters"
+    SECRET_KEY: str = DEFAULT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -40,6 +46,17 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    @model_validator(mode="after")
+    def require_real_secret_outside_dev(self) -> "Settings":
+        if self.ENVIRONMENT.lower() not in LOCAL_ENVIRONMENTS:
+            if self.SECRET_KEY == DEFAULT_SECRET_KEY or len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    "SECRET_KEY doit être définie (32 caractères minimum, différente de l'exemple) "
+                    f"quand ENVIRONMENT={self.ENVIRONMENT}. Générez-en une : "
+                    "python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+        return self
 
     class Config:
         env_file = ".env"
