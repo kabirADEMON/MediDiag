@@ -1,341 +1,245 @@
-# 🏥 Système de Diagnostic Médical Intelligent
+# MediDiag — Système de Diagnostic Médical Assisté par IA
 
-Plateforme d'aide au diagnostic médical basée sur l'intelligence artificielle combinant Fuzzy Matching et Machine Learning.
+MediDiag est une plateforme d'aide au diagnostic médical qui combine l'analyse des symptômes cliniques, les résultats d'analyses biologiques et des techniques d'intelligence artificielle pour proposer des hypothèses diagnostiques et des examens complémentaires.
 
----
+Le système repose sur une approche hybride associant le Fuzzy Matching et le Machine Learning.
 
-## 📚 Documentation
+## Documentation
 
-| Guide | Description | Temps |
-|-------|-------------|-------|
-| **[🚀 Guide d'Installation Rapide](INSTALL_GUIDE.md)** | Installation visuelle étape par étape | 10 min |
-| **[⚡ Démarrage Rapide](QUICKSTART.md)** | Installation express | 5 min |
-| **[📦 Installation Complète](INSTALLATION.md)** | Guide détaillé d'installation | 15 min |
-| **[🐳 Déploiement Docker](DOCKER.md)** | Déploiement avec Docker Compose | 10 min |
-| **[🏗️ Architecture](docs/ARCHITECTURE.md)** | Architecture du système | - |
-| **[🤖 Machine Learning](docs/ML_APPROACH.md)** | Approche ML et performances | - |
-| **[📊 Dataset](docs/DATASET_ANALYSIS.md)** | Analyse des 1000 maladies | - |
-| **[🔌 API](docs/API.md)** | Documentation API REST | - |
+| Document | Description |
+|---|---|
+| [Guide d'installation](INSTALL_GUIDE.md) | Installation étape par étape |
+| [Démarrage rapide](QUICKSTART.md) | Configuration et lancement |
+| [Installation complète](INSTALLATION.md) | Instructions détaillées |
+| [Déploiement Docker](DOCKER.md) | Déploiement avec Docker |
+| [Architecture](docs/ARCHITECTURE.md) | Architecture technique |
+| [Approche Machine Learning](docs/ML_APPROACH.md) | Modèle et méthodologie |
+| [Analyse du dataset](docs/DATASET_ANALYSIS.md) | Structure et analyse des données |
+| [Documentation API](docs/API.md) | Endpoints REST |
 
----
+## Fonctionnalités
 
-## ✨ Fonctionnalités
+### Diagnostic médical
 
-### 🎯 Diagnostic Intelligent
-- **Système hybride** : Fuzzy Matching (30%) + Machine Learning (70%)
-- **Analyse complète** : Symptômes + Analyses biologiques + Âge + Sexe
-- **1000 maladies** dans la base de données
-- **90.7% de précision** (Top-5 accuracy)
-- **Recommandations d'examens** médicaux personnalisées
-- **Niveaux d'urgence** automatiques (critique, élevée, modérée, faible)
+- Analyse des symptômes cliniques.
+- Prise en compte de l'âge et du sexe du patient.
+- Intégration des résultats d'analyses biologiques.
+- Proposition de diagnostics probables avec scores associés.
+- Recommandation d'examens complémentaires.
+- Évaluation des niveaux d'urgence.
 
-### 🤖 Intelligence Artificielle
-- **Random Forest** optimisé (50 arbres, 145 MB)
-- **302 features** : 300 texte (TF-IDF) + âge + sexe
-- **15,000 cas d'entraînement** synthétiques
-- **Entraînement rapide** : ~2 minutes
-- **Chargement rapide** : ~10 secondes
+### Intelligence artificielle
 
-### 🔌 API REST (FastAPI)
-- **Documentation interactive** : Swagger UI
-- **Validation automatique** : Pydantic
-- **CORS configuré** pour React
-- **Gestion d'erreurs** complète
-- **Endpoints** : diagnostic, maladies, statistiques
+- Approche hybride combinant Fuzzy Matching et Machine Learning.
+- Classification avec Random Forest.
+- Vectorisation des symptômes avec TF-IDF.
+- Prise en compte des caractéristiques du patient.
+- Classement des diagnostics selon leurs scores.
 
-### ⚛️ Interface React
-- **Design moderne** et responsive
-- **Formulaires intelligents** avec validation
-- **Affichage temps réel** des résultats
-- **Gestion des patients** et consultations
-- **Statistiques** et graphiques
+### Gestion médicale
 
----
+- Enregistrement des patients.
+- Saisie des symptômes et des résultats biologiques.
+- Consultation des résultats de diagnostic.
+- Interface de suivi des consultations.
+- Visualisation des statistiques.
 
-## 🚀 Démarrage rapide (5 minutes)
+### API et interface utilisateur
+
+- API REST développée avec FastAPI.
+- Documentation interactive avec Swagger UI.
+- Validation des données avec Pydantic.
+- Interface utilisateur React.
+- Communication entre le frontend et le backend.
+
+## Technologies utilisées
+
+| Domaine | Technologies |
+|---|---|
+| Backend | Python, FastAPI, Uvicorn |
+| Frontend | React 18, Vite |
+| Machine Learning | Scikit-learn, Random Forest |
+| Traitement de texte | TF-IDF, RapidFuzz |
+| Manipulation des données | Pandas |
+| Validation | Pydantic |
+| Communication API | Axios, REST |
+| Base de données | PostgreSQL |
+
+## Installation
 
 ### Prérequis
-- Python 3.9+
-- Node.js 16+
 
-### Installation
+- Python 3.9 ou supérieur
+- Node.js 16 ou supérieur
+- npm
+- PostgreSQL si la configuration de la base de données est utilisée
 
-#### 1. Backend (FastAPI)
+### 1. Backend
+
 ```bash
 cd backend-fastapi
 
-# Créer environnement virtuel
 python -m venv venv
+```
 
-# Activer (Windows)
+Activation de l'environnement virtuel sous Windows :
+
+```powershell
 .\venv\Scripts\Activate.ps1
+```
 
-# Activer (Linux/Mac)
+Sous Linux ou macOS :
+
+```bash
 source venv/bin/activate
+```
 
-# Installer dépendances
+Installation des dépendances :
+
+```bash
 pip install -r requirements.txt
+```
 
-# Entraîner le modèle ML (~2 min)
+Entraînement du modèle :
+
+```bash
 python train_ml_model.py
+```
 
-# Démarrer le serveur
+Démarrage du serveur :
+
+```bash
 python run.py
 ```
 
-✅ **Backend disponible:** http://localhost:8000  
-📖 **API Docs:** http://localhost:8000/docs
+Backend : `http://localhost:8000`
 
-#### 2. Frontend (React)
+Documentation API : `http://localhost:8000/docs`
+
+### 2. Frontend
+
+Dans un nouveau terminal :
+
 ```bash
-# Nouveau terminal
 cd frontend-react
 
-# Installer dépendances
 npm install
 
-# Démarrer le serveur
 npm run dev
 ```
 
-✅ **Frontend disponible:** http://localhost:5173
+Frontend : `http://localhost:5173`
 
----
+## Tests
 
-## 🧪 Tests
+Les scripts de test disponibles comprennent :
 
-### Test rapide du modèle ML
+| Script | Objectif |
+|---|---|
+| `test_ml_direct.py` | Tester directement le modèle ML |
+| `test_ml_accuracy.py` | Évaluer les performances du modèle |
+| `test_with_analyses.py` | Tester avec des résultats biologiques |
+| `test_complete.py` | Exécuter les tests du système |
+
+Exemple d'exécution :
+
 ```bash
 cd backend-fastapi
-python test_ml_direct.py
-```
 
-### Test de précision
-```bash
-python test_ml_accuracy.py
-```
-
-### Test avec analyses biologiques
-```bash
-python test_with_analyses.py
-```
-
-### Test complet
-```bash
 python test_complete.py
 ```
 
-### Test de l'API
-```bash
-curl -X POST http://localhost:8000/api/v1/diagnostic/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "age": 35,
-    "sexe": "M",
-    "symptomes": ["Fièvre", "Maux de tête", "Fatigue"]
-  }'
-```
+## Architecture du projet
 
----
-
-## 📊 Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend React                           │
-│                  (Port 5173/3000)                           │
-│  • Interface utilisateur moderne                            │
-│  • Formulaires de diagnostic                                │
-│  • Affichage des résultats                                  │
-└────────────────────┬────────────────────────────────────────┘
-                     │ HTTP/REST
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Backend FastAPI                           │
-│                    (Port 8000)                              │
-│  • API REST                                                 │
-│  • Validation Pydantic                                      │
-│  • Système hybride de diagnostic                           │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-┌──────────────────┐    ┌──────────────────────┐
-│ Fuzzy Matching   │    │   Machine Learning   │
-│   (30% poids)    │    │     (70% poids)      │
-│                  │    │                      │
-│ • RapidFuzz      │    │ • Random Forest      │
-│ • Filtrage âge   │    │ • TF-IDF (300)       │
-│ • Filtrage sexe  │    │ • Age + Sexe         │
-│ • Score symptômes│    │ • 601 maladies       │
-└──────────────────┘    └──────────────────────┘
-        │                         │
-        └────────────┬────────────┘
-                     ▼
-        ┌────────────────────────┐
-        │   Résultats combinés   │
-        │  • Top 10 diagnostics  │
-        │  • Scores pondérés     │
-        │  • Examens recommandés │
-        │  • Niveau d'urgence    │
-        └────────────────────────┘
-```
-
----
-
-## 📁 Structure du projet
-
-```
-.
-├── backend-fastapi/              # Backend FastAPI
+```text
+MediDiag/
+├── backend-fastapi/
 │   ├── app/
-│   │   ├── datasets/            # Dataset 1000 maladies
-│   │   ├── ml/                  # Modèle Machine Learning
-│   │   │   ├── models/          # Modèles entraînés (145 MB)
-│   │   │   ├── train_model.py   # Script d'entraînement
-│   │   │   └── predictor.py     # Prédictions ML
-│   │   ├── routes/              # Routes API
-│   │   ├── services/            # Logique métier
+│   │   ├── datasets/
+│   │   ├── ml/
+│   │   │   ├── models/
+│   │   │   ├── train_model.py
+│   │   │   └── predictor.py
+│   │   ├── routes/
+│   │   ├── services/
 │   │   │   ├── hybrid_diagnostic_service.py
 │   │   │   ├── matching_service.py
 │   │   │   └── scoring_service.py
-│   │   ├── models/              # Modèles Pydantic
-│   │   └── utils/               # Utilitaires
-│   ├── tests/                   # Tests
-│   ├── requirements.txt         # Dépendances Python
-│   └── run.py                   # Point d'entrée
+│   │   ├── models/
+│   │   └── utils/
+│   ├── tests/
+│   ├── requirements.txt
+│   └── run.py
 │
-├── frontend-react/              # Frontend React
+├── frontend-react/
 │   ├── src/
-│   │   ├── components/          # Composants React
-│   │   ├── pages/               # Pages
-│   │   ├── services/            # Services API
-│   │   ├── context/             # Context API
-│   │   └── utils/               # Utilitaires
-│   ├── package.json             # Dépendances Node
-│   └── vite.config.js           # Config Vite
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── context/
+│   │   └── utils/
+│   ├── package.json
+│   └── vite.config.js
 │
-├── database/                    # Base de données
-│   ├── schema.sql               # Schéma PostgreSQL
-│   └── migrations/              # Migrations
+├── database/
+│   ├── schema.sql
+│   └── migrations/
 │
-├── docs/                        # Documentation
+├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── ML_APPROACH.md
 │   ├── DATASET_ANALYSIS.md
 │   └── API.md
 │
-├── INSTALLATION.md              # Guide d'installation
-├── QUICKSTART.md                # Démarrage rapide
-└── README.md                    # Ce fichier
+├── INSTALLATION.md
+├── QUICKSTART.md
+└── README.md
 ```
 
----
+## Évaluation du modèle
 
-## 🛠️ Technologies
+Les résultats rapportés dans les tests du projet sont les suivants :
 
-### Backend
-- **FastAPI** - Framework web moderne
-- **Uvicorn** - Serveur ASGI
-- **Pandas** - Manipulation de données
-- **Scikit-learn** - Machine Learning
-- **RapidFuzz** - Fuzzy matching
-- **Pydantic** - Validation de données
+### Modèle Machine Learning
 
-### Frontend
-- **React 18** - Framework UI
-- **Vite** - Build tool
-- **Axios** - Client HTTP
-- **React Router** - Routing
-- **TailwindCSS** - Styling
+| Indicateur | Résultat |
+|---|---:|
+| Top-1 Accuracy | 17,00 % |
+| Top-3 Accuracy | 57,03 % |
+| Top-5 Accuracy | 90,70 % |
+| Cross-Validation | 17,73 % ± 0,78 % |
 
-### Machine Learning
-- **Random Forest** - Algorithme de classification
-- **TF-IDF** - Vectorisation de texte
-- **StandardScaler** - Normalisation
-- **LabelEncoder** - Encodage des labels
+### Système hybride
 
----
+Résultats rapportés sur un ensemble de 20 cas de test :
 
-## 📈 Performances
+| Indicateur | Résultat |
+|---|---:|
+| Top-1 Accuracy | 90,00 % |
+| Top-5 Accuracy | 95,00 % |
+| Top-10 Accuracy | 100 % |
 
-### Modèle ML
-- **Top-1 Accuracy:** 17.00%
-- **Top-3 Accuracy:** 57.03%
-- **Top-5 Accuracy:** 90.70% ✅
-- **Cross-Validation:** 17.73% (±0.78%)
+Ces résultats correspondent à des évaluations distinctes. Ils ne constituent pas une validation clinique du système ni une garantie de performance sur des patients réels.
 
-### Système Hybride (Tests réels)
-- **Top-1 Accuracy:** 90.0% (18/20) ✅
-- **Top-5 Accuracy:** 95.0% (19/20) ✅
-- **Top-10 Accuracy:** 100% (20/20) ✅
+## Sécurité et limites
 
-### Optimisations
-- **Taille du modèle:** 145 MB (réduit de 4 GB)
-- **Temps d'entraînement:** ~2 minutes (réduit de 48 min)
-- **Temps de chargement:** ~10 secondes
-- **Temps de prédiction:** <1 seconde
+- Validation des données entrantes avec Pydantic.
+- Configuration CORS pour les échanges entre frontend et backend.
+- Authentification JWT : fonctionnalité à implémenter selon l'état actuel du projet.
+- Protection des données médicales à renforcer avant tout déploiement en environnement réel.
 
----
+**Avertissement médical :** MediDiag est un outil expérimental d'aide à la décision. Les résultats proposés ne remplacent ni l'expertise d'un professionnel de santé ni un diagnostic médical établi après examen clinique.
 
-## 🔒 Sécurité
+## Évolutions envisagées
 
-- ⚠️ **Avertissement médical:** Cet outil est une aide à la décision et ne remplace pas un diagnostic médical professionnel
-- 🔐 Authentification JWT (à implémenter)
-- 🛡️ Validation des entrées avec Pydantic
-- 🔒 CORS configuré
-- 🚫 Pas de stockage de données sensibles en clair
+- Mise en place de l'authentification JWT.
+- Gestion des rôles utilisateurs : médecins, infirmiers et administrateurs.
+- Historique des consultations.
+- Génération et exportation de rapports PDF.
+- Amélioration de l'évaluation et des performances du modèle.
+- Développement de fonctionnalités statistiques avancées.
+- Prise en charge de plusieurs langues.
 
----
+## Licence
 
-## 📝 Licence
-
-Ce projet est sous licence MIT.
-
----
-
-## 👥 Contribution
-
-Les contributions sont les bienvenues! Voir `CONTRIBUTING.md` pour plus de détails.
-
----
-
-## 📞 Support
-
-Pour toute question:
-1. Consulter la [documentation](docs/)
-2. Vérifier les [issues GitHub](issues/)
-3. Créer une nouvelle issue
-
----
-
-## 🎯 Roadmap
-
-- [ ] Authentification JWT complète
-- [ ] Gestion des utilisateurs (médecins, infirmiers)
-- [ ] Historique des consultations
-- [ ] Export PDF des diagnostics
-- [ ] Graphiques et statistiques avancées
-- [ ] Support multilingue
-- [ ] Application mobile
-- [ ] Amélioration continue du modèle ML
-
----
-
-## ✅ Statut du projet
-
-🟢 **Opérationnel** - Le système est fonctionnel et prêt pour les tests
-
-- ✅ Backend FastAPI opérationnel
-- ✅ Frontend React opérationnel
-- ✅ Modèle ML entraîné et optimisé
-- ✅ API documentée
-- ✅ Tests fonctionnels
-- ✅ Documentation complète
-
----
-
-**Développé avec ❤️ pour améliorer le diagnostic médical**
-#   m a l a d i e 
- 
- 
+Ce projet est distribué sous licence MIT.
